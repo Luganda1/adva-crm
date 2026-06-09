@@ -1,0 +1,79 @@
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Open+Sans:wght@400;500;600&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --orange: #E8711A; --orange-dark: #C75E10; --orange-light: #FDF0E6;
+  --charcoal: #2C2C2C; --gray: #6B6B6B; --gray-light: #F5F5F5;
+  --border: #E0E0E0; --red: #D63C3C; --red-light: #FEF0F0;
+  --green: #2E7D4F; --green-light: #EDF7F1; --blue: #1A6BB8; --blue-light: #EBF3FC;
+  --amber: #B07400; --amber-light: #FFF8E6;
+  --shadow: 0 1px 4px rgba(0,0,0,.08); --shadow-md: 0 4px 16px rgba(0,0,0,.1);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Open Sans', sans-serif; background: #F7F7F7; color: var(--charcoal); font-size: 14px; }
+
+@layer components {
+  .badge { @apply text-xs font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wide font-heading; }
+  .badge-lead { background: var(--gray-light); color: var(--gray); }
+  .badge-active { background: var(--green-light); color: var(--green); }
+  .badge-probate { background: var(--amber-light); color: var(--amber); }
+  .badge-foreclosure { background: var(--red-light); color: var(--red); }
+  .badge-auction { background: var(--blue-light); color: var(--blue); }
+  .badge-overdue { background: var(--red-light); color: var(--red); }
+  .date-chip { @apply inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full; }
+  .date-chip.expired { background: var(--red-light); color: var(--red); }
+  .date-chip.soon { background: var(--amber-light); color: var(--amber); }
+  .date-chip.future { background: var(--green-light); color: var(--green); }
+  .prop-card { @apply bg-white border border-gray-200 rounded-xl p-4 cursor-pointer transition-all shadow-sm; }
+  .prop-card:hover { border-color: var(--orange); box-shadow: var(--shadow-md); transform: translateY(-1px); }
+  .prop-card.active-card { border-color: var(--orange); border-width: 1.5px; }
+  .buyer-card { @apply bg-white border border-gray-200 rounded-xl p-4 cursor-pointer transition-all shadow-sm; }
+  .buyer-card:hover { border-color: var(--orange); box-shadow: var(--shadow-md); transform: translateY(-1px); }
+  .btn { @apply font-heading font-semibold text-sm px-4 py-2 rounded-lg cursor-pointer border-0 transition-all whitespace-nowrap; }
+  .btn-primary { background: var(--orange); color: white; }
+  .btn-primary:hover { background: var(--orange-dark); }
+  .btn-primary:disabled { opacity: .6; cursor: not-allowed; }
+  .btn-outline { @apply bg-white border border-gray-200; color: var(--charcoal); }
+  .btn-outline:hover { border-color: var(--orange); color: var(--orange); }
+  .btn-danger { @apply bg-white border border-gray-200; color: var(--red); }
+  .btn-danger:hover { background: var(--red-light); border-color: var(--red); }
+  .btn-sm { @apply text-xs px-3 py-1; }
+  .form-input { @apply w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white transition-colors; color: var(--charcoal); }
+  .form-input:focus { outline: none; border-color: var(--orange); }
+  .filter-select { @apply px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white cursor-pointer; color: var(--charcoal); }
+  .filter-select:focus { outline: none; border-color: var(--orange); }
+  .filter-active { border-color: var(--orange) !important; background: var(--orange-light) !important; }
+  .detail-panel { @apply fixed right-0 top-0 h-screen bg-white border-l border-gray-200 overflow-y-auto z-50;
+    width: min(520px,100vw); transform: translateX(100%); transition: transform .22s cubic-bezier(.4,0,.2,1); box-shadow: -4px 0 24px rgba(0,0,0,.12); }
+  .detail-panel.open { transform: translateX(0); }
+  .panel-overlay { @apply hidden fixed inset-0 z-40; background: rgba(0,0,0,.35); }
+  .panel-overlay.open { @apply block; }
+  .modal-wrap { @apply hidden fixed inset-0 z-50 items-center justify-center p-5; background: rgba(0,0,0,.45); }
+  .modal-wrap.open { @apply flex; }
+  .modal { @apply bg-white rounded-xl w-full max-w-xl overflow-y-auto; max-height: 92vh; box-shadow: var(--shadow-md); }
+  .modal-head { @apply flex items-center justify-between px-5 py-4 border-b border-gray-200; }
+  .modal-body { @apply p-5; }
+  .modal-foot { @apply px-5 py-3 border-t border-gray-200 flex justify-end gap-2; }
+  .form-group { @apply mb-3.5; }
+  .form-label { @apply block text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wider font-heading; }
+  .form-row { @apply grid grid-cols-2 gap-3.5; }
+  .panel-sec-title { @apply text-xs font-bold uppercase tracking-wider font-heading; color: var(--gray); }
+  .sync-dot { @apply w-2 h-2 rounded-full bg-gray-300 flex-shrink-0; }
+  .sync-dot.connected { background: var(--green); }
+  .sync-dot.syncing { background: var(--orange); animation: pulse 1s infinite; }
+  .geo-state-header { @apply flex items-center gap-3 px-4 py-3 rounded-xl cursor-pointer mb-2; background: var(--charcoal); color: white; }
+  .geo-county-header { @apply flex items-center gap-2.5 px-3.5 py-2 rounded-lg cursor-pointer mb-1.5 border; background: var(--orange-light); border-color: #f0c090; }
+  .upload-zone { @apply border-2 border-dashed border-gray-200 rounded-lg p-6 text-center cursor-pointer transition-colors; }
+  .upload-zone:hover { border-color: var(--orange); }
+  .event-row { @apply flex gap-3.5 items-center p-3 bg-white border border-gray-200 rounded-lg mb-2 cursor-pointer transition-all shadow-sm; }
+  .event-row:hover { border-color: var(--orange); }
+  .partner-row { @apply flex items-center gap-3.5 p-3.5 bg-white border border-gray-200 rounded-xl mb-2.5 shadow-sm; }
+  .check-chip { @apply inline-flex items-center gap-1.5 text-sm cursor-pointer bg-gray-100 px-3 py-1.5 rounded-md border border-gray-200 font-normal transition-all; }
+  .check-chip:has(input:checked) { background: var(--orange-light); border-color: var(--orange); color: var(--orange-dark); }
+  @keyframes pulse { 0%,100%{opacity:1}50%{opacity:.4} }
+}
+@media (max-width: 600px) { .form-row { @apply grid-cols-1; } }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-thumb { background: #ddd; border-radius: 3px; }
