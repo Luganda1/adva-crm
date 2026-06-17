@@ -4,6 +4,8 @@ import AppShell from '@/components/AppShell'
 import './globals.css'
 import type { Property, Partner, Buyer, MoneyPartner } from '@/types'
 
+export const dynamic = 'force-dynamic'
+
 export const metadata: Metadata = { title: 'ADVA Leads CRM', description: 'Real estate lead management' }
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
