@@ -80,8 +80,12 @@ export function CRMProvider({ children, initialProperties = [], initialPartners 
       await supabase.from('properties').update(data).eq('id', id)
       await loadAll(); return id
     } else {
-      const { data: row } = await supabase.from('properties').insert({ ...data, followups: [], docs: [] }).select('id').single()
-      await loadAll(); return row?.id ?? ''
+      const { data: row } = await supabase.from('properties').insert({ ...data, followups: [], docs: [] }).select('*').single()
+      await loadAll()
+      if (row) {
+        fetch('/api/notify-zap', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(row) }).catch(() => {})
+      }
+      return row?.id ?? ''
     }
   }, [loadAll])
 
