@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   // Notify Zapier unless this request already came from Zapier (prevents infinite loop)
   if (req.headers.get('x-source') !== 'zapier') {
-    notifyZapier(data as Record<string, unknown>)
+    await notifyZapier(data as Record<string, unknown>)
   }
   return NextResponse.json(data, { status: 201 })
 }
