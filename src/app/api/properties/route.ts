@@ -15,29 +15,51 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const deny = checkApiKey(req)
   if (deny) return deny
-  const body = await req.json()
 
-  // Build address from separate street/city/state/zip fields (e.g. Realeflow sends these individually)
-  const address = body.address?.trim() ||
-    [body.street, body.city, body.state, body.zip].filter(Boolean).join(', ').trim()
+  let body: Record<string, unknown>
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ error: 'invalid JSON body' }, { status: 400 })
+  }
 
-  if (!address) return NextResponse.json({ error: 'address is required' }, { status: 422 })
+  // Normalize keys to lowercase so field names from Realeflow work regardless of casing
+  const b: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(body)) {
+    b[k.toLowerCase().replace(/\s+/g, '_')] = v
+  }
 
-  // Only insert columns that exist in the properties table — reject any unknown fields
+  // Build address — Realeflow may send a full address or split street/city/state/zip
+  const address = (
+    (b.address as string) ||
+    (b.street_address as string) ||
+    (b.property_address as string) ||
+    (b.street as string) ||
+    [b.address1, b.city, b.state, b.zip].filter(Boolean).join(', ')
+  )?.trim()
+
+  if (!address) {
+    return NextResponse.json(
+      { error: 'address is required', received_keys: Object.keys(b) },
+      { status: 422 }
+    )
+  }
+
+  // Only insert columns that exist in the properties table — ignore any unknown fields
   const row = {
     address,
-    owner_name: body.owner_name ?? body.owner ?? null,
-    phone: body.phone ?? null,
-    email: body.email ?? null,
-    notes: body.notes ?? null,
-    status: body.status ?? 'lead',
-    probate_date: body.probate_date ?? null,
-    foreclosure_date: body.foreclosure_date ?? null,
-    auction_date: body.auction_date ?? null,
-    next_followup: body.next_followup ?? null,
-    partner_id: body.partner_id ?? null,
-    mailing_address: body.mailing_address ?? null,
-    skip_relatives: body.skip_relatives ?? null,
+    owner_name: (b.owner_name ?? b.owner ?? b.full_name ?? b.name ?? null) as string | null,
+    phone: (b.phone ?? b.phone_number ?? b.mobile ?? null) as string | null,
+    email: (b.email ?? b.email_address ?? null) as string | null,
+    notes: (b.notes ?? b.description ?? b.comments ?? null) as string | null,
+    status: (b.status as string) ?? 'lead',
+    probate_date: (b.probate_date ?? null) as string | null,
+    foreclosure_date: (b.foreclosure_date ?? null) as string | null,
+    auction_date: (b.auction_date ?? null) as string | null,
+    next_followup: (b.next_followup ?? null) as string | null,
+    partner_id: (b.partner_id ?? null) as string | null,
+    mailing_address: (b.mailing_address ?? null) as string | null,
+    skip_relatives: (b.skip_relatives ?? null) as string | null,
     followups: [],
     docs: [],
   }
