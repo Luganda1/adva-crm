@@ -61,12 +61,20 @@ export function detectContactType(name: string | null): 'owner' | 'lawfirm' {
   return kws.some(k => lower.includes(k)) ? 'lawfirm' : 'owner'
 }
 
-export function parseCSV(text: string): string[][] {
+export function detectDelimiter(text: string): string {
+  const sample = text.slice(0, 2000)
+  const counts = { ',': 0, '\t': 0, ';': 0, '|': 0 }
+  for (const ch of sample) if (ch in counts) counts[ch as keyof typeof counts]++
+  return Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0]
+}
+
+export function parseCSV(text: string, delimiter?: string): string[][] {
+  const sep = delimiter || detectDelimiter(text)
   return text.split(/\r?\n/).filter(l => l.trim()).map(line => {
     const row: string[] = []; let cur = '', inQ = false
     for (const ch of line) {
       if (ch === '"') { inQ = !inQ }
-      else if (ch === ',' && !inQ) { row.push(cur.trim()); cur = '' }
+      else if (ch === sep && !inQ) { row.push(cur.trim()); cur = '' }
       else cur += ch
     }
     row.push(cur.trim()); return row
@@ -76,16 +84,19 @@ export function parseCSV(text: string): string[][] {
 export function detectColMap(headers: string[]): Record<string, number> {
   const map: Record<string, number> = {}
   const patterns: Record<string, string[]> = {
-    address: ['address','property address','street','prop address','addr','location'],
-    owner_name: ['owner','owner name','contact','name','seller','full name'],
-    phone: ['phone','phone number','cell','mobile','telephone'],
-    email: ['email','e-mail','email address'],
-    status: ['status','lead status','stage'],
-    notes: ['notes','note','comments','description'],
-    city: ['city','town'], state: ['state','st'], zip: ['zip','zip code','postal'],
-    probate_date: ['probate date','probate','filing date'],
-    foreclosure_date: ['foreclosure date','foreclosure','fc date','sale date'],
-    auction_date: ['auction date','auction'],
+    address:          ['address','property address','street','prop address','addr','location','situs','street address'],
+    owner_name:       ['owner','owner name','contact','name','seller','full name','grantor','taxpayer','title holder'],
+    phone:            ['phone','phone number','cell','mobile','telephone','ph '],
+    email:            ['email','e-mail','email address'],
+    status:           ['status','lead status','stage'],
+    notes:            ['notes','note','comments','description','remarks'],
+    city:             ['city','town','municipality'],
+    state:            ['state','st'],
+    zip:              ['zip','zip code','postal','zipcode'],
+    probate_date:     ['probate date','probate','filing date','date filed','case filed'],
+    foreclosure_date: ['foreclosure date','foreclosure','fc date','sale date','lis pendens'],
+    auction_date:     ['auction date','auction','sheriff sale','trustee sale'],
+    mailing_address:  ['mailing address','mail address','mailing'],
   }
   headers.forEach((h, i) => {
     const hl = h.toLowerCase().trim()
@@ -94,6 +105,19 @@ export function detectColMap(headers: string[]): Record<string, number> {
     }
   })
   return map
+}
+
+export function assembleAddress(row: string[], colMap: Record<string, number>): string {
+  const get = (f: string) => colMap[f] !== undefined ? (row[colMap[f]] || '').trim() : ''
+  const street = get('address')
+  const city   = get('city')
+  const state  = get('state')
+  const zip    = get('zip')
+  if (street && (city || state)) {
+    const cityStateZip = [city, state && zip ? `${state} ${zip}` : state || zip].filter(Boolean).join(', ')
+    return [street, cityStateZip].filter(Boolean).join(', ')
+  }
+  return street
 }
 
 export function parseImportDate(str: string): string | null {

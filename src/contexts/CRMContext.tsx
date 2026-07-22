@@ -2,7 +2,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { loadSender, saveSender, buildDefaultTemplates, getCustomTemplates, saveCustomTemplate, deleteCustomTemplate, generateLetterBody, printLetter } from '@/lib/letters'
-import { todayStr, parseCSV, detectColMap, parseImportDate } from '@/lib/utils'
+import { todayStr, parseCSV, detectColMap, assembleAddress, parseImportDate } from '@/lib/utils'
 import type { Property, Partner, Buyer, SenderInfo, FollowUp, Doc, LetterType } from '@/types'
 
 interface Ctx {
@@ -154,18 +154,21 @@ export function CRMProvider({ children, initialProperties = [], initialPartners 
   const importRows = useCallback(async (headers: string[], rows: string[][]): Promise<{ added: number; updated: number; skipped: number }> => {
     const colMap = detectColMap(headers)
     let added = 0, updated = 0, skipped = 0
+    const get = (row: string[], f: string) => colMap[f] !== undefined ? (row[colMap[f]] || '').trim() : ''
     for (const row of rows) {
-      const get = (f: string) => colMap[f] !== undefined ? (row[colMap[f]] || '').trim() : ''
-      let address = get('address')
-      if (!address && get('city')) address = [get('city'), get('state'), get('zip')].filter(Boolean).join(', ')
+      const address = assembleAddress(row, colMap)
       if (!address) { skipped++; continue }
       const data: Partial<Property> = {
-        address, owner_name: get('owner_name') || null, phone: get('phone') || null,
-        email: get('email') || null, notes: get('notes') || null,
-        status: (get('status') as Property['status']) || 'lead',
-        probate_date: parseImportDate(get('probate_date')),
-        foreclosure_date: parseImportDate(get('foreclosure_date')),
-        auction_date: parseImportDate(get('auction_date')),
+        address,
+        owner_name: get(row, 'owner_name') || null,
+        phone: get(row, 'phone') || null,
+        email: get(row, 'email') || null,
+        notes: get(row, 'notes') || null,
+        status: (get(row, 'status') as Property['status']) || 'lead',
+        probate_date: parseImportDate(get(row, 'probate_date')),
+        foreclosure_date: parseImportDate(get(row, 'foreclosure_date')),
+        auction_date: parseImportDate(get(row, 'auction_date')),
+        mailing_address: get(row, 'mailing_address') || null,
       }
       const existing = properties.find(p => p.address?.toLowerCase().trim() === address.toLowerCase().trim())
       if (existing) {
@@ -177,6 +180,7 @@ export function CRMProvider({ children, initialProperties = [], initialPartners 
         if (data.probate_date && !existing.probate_date) u.probate_date = data.probate_date
         if (data.foreclosure_date && !existing.foreclosure_date) u.foreclosure_date = data.foreclosure_date
         if (data.auction_date && !existing.auction_date) u.auction_date = data.auction_date
+        if (data.mailing_address && !existing.mailing_address) u.mailing_address = data.mailing_address
         if (Object.keys(u).length) { await supabase.from('properties').update(u).eq('id', existing.id); updated++ }
         else skipped++
       } else {
