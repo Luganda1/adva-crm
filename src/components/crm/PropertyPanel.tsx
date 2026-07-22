@@ -1,19 +1,53 @@
 'use client'
 import { useState } from 'react'
-import { fmtD, todayStr } from '@/lib/utils'
+import { fmtD, fmt$, todayStr } from '@/lib/utils'
 import { useCRM } from '@/contexts/CRMContext'
 import type { Property, Partner } from '@/types'
+import type { EnrichResult } from '@/app/api/enrich/route'
 
 export default function PropertyPanel({ property: p, partners, onClose, onEdit, onSkipTrace, onLetter, onMatch }: {
   property: Property; partners: Partner[]
   onClose: () => void; onEdit: () => void; onSkipTrace: () => void; onLetter: () => void; onMatch: () => void
 }) {
-  const { deleteProperty, deleteFU, uploadDocs, deleteDoc } = useCRM()
+  const { deleteProperty, deleteFU, uploadDocs, deleteDoc, saveProperty } = useCRM()
   const partner = partners.find(x => x.id === p.partner_id)
   const today = todayStr()
   const fus = Array.isArray(p.followups) ? p.followups : []
   const docs = Array.isArray(p.docs) ? p.docs : []
   const dateItems = ([['Probate', p.probate_date], ['Foreclosure', p.foreclosure_date], ['Auction', p.auction_date], ['Next Follow-up', p.next_followup]] as [string, string | null][]).filter(([, d]) => d)
+
+  const [enrichData, setEnrichData]     = useState<EnrichResult | null>(null)
+  const [enrichLoading, setEnrichLoading] = useState(false)
+  const [enrichError, setEnrichError]   = useState<string | null>(null)
+  const [enrichApplied, setEnrichApplied] = useState(false)
+
+  async function handleEnrich() {
+    setEnrichLoading(true); setEnrichError(null); setEnrichData(null); setEnrichApplied(false)
+    try {
+      const res = await fetch(`/api/enrich?address=${encodeURIComponent(p.address)}`)
+      const json = await res.json()
+      if (!res.ok) { setEnrichError(json.error || 'Enrichment failed'); return }
+      setEnrichData(json)
+    } catch { setEnrichError('Network error — please try again') }
+    finally { setEnrichLoading(false) }
+  }
+
+  async function applyEnrichment() {
+    if (!enrichData) return
+    const updates: Partial<Property> = {}
+    if (enrichData.owner && !p.owner_name) updates.owner_name = enrichData.owner
+    const lines = ['[Property Data]']
+    if (enrichData.beds)           lines.push(`Beds: ${enrichData.beds}  Baths: ${enrichData.baths}  Sqft: ${enrichData.sqft?.toLocaleString()}`)
+    if (enrichData.yearBuilt)      lines.push(`Year Built: ${enrichData.yearBuilt}  Type: ${enrichData.propertyType ?? '—'}`)
+    if (enrichData.estimatedValue) lines.push(`Est. Value: ${fmt$(enrichData.estimatedValue)}`)
+    if (enrichData.equity)         lines.push(`Est. Equity: ${fmt$(enrichData.equity)}`)
+    if (enrichData.assessedValue)  lines.push(`Assessed: ${fmt$(enrichData.assessedValue)}`)
+    if (enrichData.lastSalePrice)  lines.push(`Last Sale: ${fmt$(enrichData.lastSalePrice)} (${enrichData.lastSaleDate ?? '?'})`)
+    if (enrichData.estimatedRent)  lines.push(`Est. Rent: ${fmt$(enrichData.estimatedRent)}/mo`)
+    updates.notes = p.notes ? p.notes + '\n\n' + lines.join('\n') : lines.join('\n')
+    await saveProperty(updates, p.id)
+    setEnrichApplied(true)
+  }
 
   async function handleDelete() {
     if (!confirm('Delete this property? This cannot be undone.')) return
@@ -27,6 +61,9 @@ export default function PropertyPanel({ property: p, partners, onClose, onEdit, 
         <div className="flex gap-1.5 flex-shrink-0 flex-wrap">
           <button className="btn btn-outline btn-sm" onClick={onEdit}>Edit</button>
           <button className="btn btn-outline btn-sm" onClick={onSkipTrace}>Skip Trace</button>
+          <button className="btn btn-outline btn-sm" onClick={handleEnrich} disabled={enrichLoading}>
+            {enrichLoading ? '...' : '✦ Enrich'}
+          </button>
           <button className="btn btn-outline btn-sm" onClick={onLetter}>Letter</button>
           <button className="btn btn-outline btn-sm" onClick={onMatch}>Match</button>
           <button className="btn btn-danger btn-sm" onClick={handleDelete}>Delete</button>
@@ -57,6 +94,76 @@ export default function PropertyPanel({ property: p, partners, onClose, onEdit, 
           {partner && <span className="badge badge-lead">👤 {partner.name}</span>}
         </div>
       </section>
+
+      {/* Enrichment results */}
+      {enrichError && (
+        <section className="px-5 py-3" style={{ borderBottom: '1px solid var(--border)', background: '#fff5f5' }}>
+          <div className="text-sm text-red-500">{enrichError}</div>
+        </section>
+      )}
+
+      {enrichData && !enrichApplied && (
+        <section className="px-5 py-4" style={{ borderBottom: '1px solid var(--border)', background: '#f0f9ff' }}>
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-sm font-semibold text-blue-700">✦ Property Data from RentCast</div>
+            <button className="text-xs text-gray-400 hover:text-gray-600" onClick={() => setEnrichData(null)}>✕</button>
+          </div>
+          <div className="grid grid-cols-2 gap-2 mb-3">
+            {enrichData.owner && (
+              <div className="col-span-2 bg-white rounded-lg px-3 py-2 border border-blue-100">
+                <div className="text-[10px] font-semibold uppercase text-blue-400 mb-0.5">Owner</div>
+                <div className="text-sm font-semibold">{enrichData.owner}</div>
+                {!p.owner_name && <div className="text-[10px] text-blue-500 mt-0.5">Will fill empty owner name field</div>}
+              </div>
+            )}
+            {enrichData.estimatedValue && (
+              <div className="bg-white rounded-lg px-3 py-2 border border-blue-100">
+                <div className="text-[10px] font-semibold uppercase text-blue-400 mb-0.5">Est. Value</div>
+                <div className="text-sm font-bold text-green-600">{fmt$(enrichData.estimatedValue)}</div>
+              </div>
+            )}
+            {enrichData.equity !== null && (
+              <div className="bg-white rounded-lg px-3 py-2 border border-blue-100">
+                <div className="text-[10px] font-semibold uppercase text-blue-400 mb-0.5">Est. Equity</div>
+                <div className={`text-sm font-bold ${(enrichData.equity ?? 0) > 0 ? 'text-green-600' : 'text-red-500'}`}>{fmt$(enrichData.equity)}</div>
+              </div>
+            )}
+            {enrichData.beds && (
+              <div className="bg-white rounded-lg px-3 py-2 border border-blue-100">
+                <div className="text-[10px] font-semibold uppercase text-blue-400 mb-0.5">Property</div>
+                <div className="text-sm">{enrichData.beds}bd / {enrichData.baths}ba · {enrichData.sqft?.toLocaleString()} sqft</div>
+              </div>
+            )}
+            {enrichData.yearBuilt && (
+              <div className="bg-white rounded-lg px-3 py-2 border border-blue-100">
+                <div className="text-[10px] font-semibold uppercase text-blue-400 mb-0.5">Built / Type</div>
+                <div className="text-sm">{enrichData.yearBuilt} · {enrichData.propertyType ?? '—'}</div>
+              </div>
+            )}
+            {enrichData.lastSalePrice && (
+              <div className="bg-white rounded-lg px-3 py-2 border border-blue-100">
+                <div className="text-[10px] font-semibold uppercase text-blue-400 mb-0.5">Last Sale</div>
+                <div className="text-sm">{fmt$(enrichData.lastSalePrice)} <span className="text-gray-400 text-xs">({enrichData.lastSaleDate ?? '?'})</span></div>
+              </div>
+            )}
+            {enrichData.estimatedRent && (
+              <div className="bg-white rounded-lg px-3 py-2 border border-blue-100">
+                <div className="text-[10px] font-semibold uppercase text-blue-400 mb-0.5">Est. Rent</div>
+                <div className="text-sm">{fmt$(enrichData.estimatedRent)}/mo</div>
+              </div>
+            )}
+          </div>
+          <button className="btn btn-primary btn-sm" onClick={applyEnrichment}>
+            Save to property
+          </button>
+        </section>
+      )}
+
+      {enrichApplied && (
+        <section className="px-5 py-3" style={{ borderBottom: '1px solid var(--border)', background: '#f0fdf4' }}>
+          <div className="text-sm text-green-600 font-medium">✓ Property data saved to notes</div>
+        </section>
+      )}
 
       {dateItems.length > 0 && (
         <section className="px-5 py-4" style={{ borderBottom: '1px solid var(--border)' }}>
