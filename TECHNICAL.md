@@ -15,6 +15,7 @@
 11. [External Integrations](#11-external-integrations)
 12. [Deployment](#12-deployment)
 13. [Infrastructure & Maintenance](#13-infrastructure--maintenance)
+14. [TODO — Planned Features](#14-todo--planned-features)
 
 ---
 
@@ -26,7 +27,7 @@ The app has two distinct modules:
 
 | Module | Path | Purpose |
 |---|---|---|
-| CRM | `/leads`, `/followup`, `/events`, etc. | Property leads, partners, buyers, letters |
+| CRM | `/leads`, `/followup`, `/events`, etc. | Property leads, partners, buyers, letters, CSV import |
 | Money Partners | `/money-partners/*` | Financing partners, deal tracking, comms |
 
 ---
@@ -41,7 +42,7 @@ The app has two distinct modules:
 | Database | Supabase (PostgreSQL) with Realtime |
 | Deployment | Vercel |
 | Maps | Google Maps API |
-| External integrations | Zapier webhooks, Google Sheets CSV |
+| External integrations | Realeflow via Zapier webhooks, Google Sheets CSV |
 
 ---
 
@@ -51,7 +52,7 @@ The app has two distinct modules:
 adva-crm/
 ├── src/
 │   ├── app/
-│   │   ├── layout.tsx              # Root layout — server fetches all data on every request
+│   │   ├── layout.tsx              # Root layout — force-dynamic, server fetches all data
 │   │   ├── page.tsx                # Redirects / → /leads
 │   │   ├── middleware.ts           # CORS headers for all /api/* routes
 │   │   ├── leads/page.tsx
@@ -62,38 +63,43 @@ adva-crm/
 │   │   ├── partners/page.tsx
 │   │   ├── letters/page.tsx
 │   │   ├── buyers/page.tsx
+│   │   ├── import/page.tsx         # CSV import page (new)
 │   │   ├── settings/page.tsx
 │   │   ├── money-partners/
 │   │   │   ├── page.tsx
 │   │   │   ├── pipeline/page.tsx
 │   │   │   └── deals/page.tsx
 │   │   └── api/
-│   │       ├── health/route.ts
+│   │       ├── health/route.ts           # GET — connection health check
 │   │       ├── properties/
-│   │       │   ├── route.ts        # GET, POST
-│   │       │   └── [id]/route.ts   # PATCH, DELETE
+│   │       │   ├── route.ts              # GET, POST (with Realeflow field mapping)
+│   │       │   └── [id]/route.ts         # PATCH, DELETE
+│   │       ├── leads/route.ts            # GET, POST — dedicated lead intake endpoint
 │   │       ├── partners/
-│   │       │   ├── route.ts        # GET, POST
-│   │       │   └── [id]/route.ts   # DELETE
+│   │       │   ├── route.ts              # GET, POST
+│   │       │   └── [id]/route.ts         # DELETE
 │   │       ├── buyers/
-│   │       │   ├── route.ts        # GET, POST
-│   │       │   └── [id]/route.ts   # PATCH, DELETE
+│   │       │   ├── route.ts              # GET, POST
+│   │       │   └── [id]/route.ts         # PATCH, DELETE
 │   │       ├── money-partners/
-│   │       │   ├── route.ts        # GET, POST
-│   │       │   └── [id]/route.ts   # PATCH, DELETE
-│   │       ├── stats/route.ts      # GET — aggregated counts
-│   │       ├── webhook/route.ts    # POST — external webhook entry point
+│   │       │   ├── route.ts              # GET, POST
+│   │       │   └── [id]/route.ts         # PATCH, DELETE
+│   │       ├── enrich/route.ts           # GET — property enrichment (RentCast/API Ninjas)
+│   │       ├── notify-zap/route.ts       # POST — fires Zapier outbound notification
+│   │       ├── stats/route.ts            # GET — aggregated lead counts
+│   │       ├── debug-webhook/route.ts    # POST/GET — raw payload inspector (dev tool)
 │   │       └── cron/
-│   │           └── keep-alive/route.ts  # GET — daily Supabase ping
+│   │           └── keep-alive/route.ts   # GET — daily Supabase ping
 │   ├── components/
-│   │   ├── AppShell.tsx            # Root client wrapper; mounts both context providers
+│   │   ├── AppShell.tsx
 │   │   ├── crm/
-│   │   │   ├── CRMChrome.tsx       # Navigation shell, stats bar, sync indicator
-│   │   │   ├── LeadsView.tsx       # Lead list with search, filter, sort
-│   │   │   ├── PropertyCard.tsx    # Single lead card
-│   │   │   ├── PropertyPanel.tsx   # Lead detail side panel
+│   │   │   ├── CRMChrome.tsx        # Navigation shell with Import tab
+│   │   │   ├── LeadsView.tsx
+│   │   │   ├── PropertyCard.tsx
+│   │   │   ├── PropertyPanel.tsx    # Now includes ✦ Enrich button
 │   │   │   ├── AddPropertyModal.tsx
 │   │   │   ├── SkipTraceModal.tsx
+│   │   │   ├── ImportView.tsx       # CSV import UI (new)
 │   │   │   ├── FollowupView.tsx
 │   │   │   ├── EventsView.tsx
 │   │   │   ├── MapView.tsx
@@ -110,22 +116,21 @@ adva-crm/
 │   │   └── ui/
 │   │       └── EmptyState.tsx
 │   ├── contexts/
-│   │   ├── CRMContext.tsx          # CRM state + all mutations
-│   │   └── MPContext.tsx           # Money partner state + mutations
+│   │   ├── CRMContext.tsx           # importRows now uses assembleAddress()
+│   │   └── MPContext.tsx
 │   ├── lib/
-│   │   ├── supabase.ts             # Browser-side Supabase client (anon key)
-│   │   ├── supabase-server.ts      # Server-side Supabase client (service role key)
-│   │   ├── api-auth.ts             # API key guard middleware
-│   │   ├── utils.ts                # Date, money, CSV, address utilities
-│   │   └── letters.ts              # Letter template engine
+│   │   ├── supabase.ts
+│   │   ├── supabase-server.ts
+│   │   ├── api-auth.ts
+│   │   ├── notify-zap.ts            # Shared Zapier notification utility (new)
+│   │   ├── utils.ts                 # detectDelimiter, assembleAddress added
+│   │   └── letters.ts
 │   └── types/
-│       └── index.ts                # All TypeScript interfaces
+│       └── index.ts
 ├── supabase/
-│   └── schema.sql                  # Full database schema — run once in Supabase SQL editor
-├── vercel.json                     # Vercel cron job config
-├── next.config.ts
-├── tailwind.config.js
-├── tsconfig.json
+│   └── schema.sql
+├── vercel.json                      # Cron job config
+├── TECHNICAL.md                     # This file
 └── package.json
 ```
 
@@ -133,18 +138,19 @@ adva-crm/
 
 ## 4. Environment Variables
 
-Set these in Vercel → Project Settings → Environment Variables (and in `.env.local` for local dev).
-
 | Variable | Required | Description |
 |---|---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Supabase anon/public key (browser-safe) |
-| `SUPABASE_SERVICE_ROLE_KEY` | Yes | Supabase service role key (server-only, never exposed to browser) |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Supabase anon/public key |
+| `SUPABASE_SERVICE_ROLE_KEY` | Yes | Supabase service role key (server-only) |
 | `NEXT_PUBLIC_GOOGLE_MAPS_KEY` | Yes | Google Maps JavaScript API key |
-| `API_SECRET_KEY` | Recommended | Secret sent as `x-api-key` header to authenticate external API calls (Zapier etc.) |
-| `CRON_SECRET` | Recommended | Secret Vercel passes as `Authorization: Bearer <secret>` on cron requests |
+| `API_SECRET_KEY` | Recommended | Validates `x-api-key` header on all API routes |
+| `CRON_SECRET` | Recommended | Secures the `/api/cron/keep-alive` endpoint |
+| `RENTCAST_API_KEY` | Optional | RentCast property enrichment (50 calls/month free — requires CC) |
 | `WEBHOOK_SECRET` | Optional | Validates incoming webhook payloads |
-| `ZAP_INBOUND_URL` | Optional | Zapier webhook URL for outbound triggers |
+| `ZAP_INBOUND_URL` | Optional | Zapier catch hook URL for outbound CRM notifications |
+
+> **Note on enrichment API:** `RENTCAST_API_KEY` requires a credit card even on the free tier. A replacement using API Ninjas (no CC required, 10K calls/month free) is planned — see [TODO](#14-todo--planned-features).
 
 ---
 
@@ -154,30 +160,26 @@ All tables live in the `public` schema on Supabase (PostgreSQL). Real-time subsc
 
 ### `partners`
 
-Created first because `properties` references it.
-
 | Column | Type | Notes |
 |---|---|---|
 | `id` | uuid | Primary key, auto-generated |
-| `created_at` | timestamptz | Auto-set to now() |
+| `created_at` | timestamptz | Auto-set |
 | `name` | text | Required |
 | `phone` | text | |
 | `email` | text | |
-| `role` | text | Free-form role label |
+| `role` | text | |
 
 ### `properties`
-
-Core lead table.
 
 | Column | Type | Notes |
 |---|---|---|
 | `id` | uuid | Primary key |
 | `created_at` | timestamptz | |
-| `address` | text | Required |
+| `address` | text | Required — full assembled address |
 | `owner_name` | text | |
 | `phone` | text | |
 | `email` | text | |
-| `notes` | text | |
+| `notes` | text | Also stores enrichment data block |
 | `status` | text | Enum: `lead`, `active`, `probate`, `foreclosure`, `auction` |
 | `probate_date` | date | |
 | `foreclosure_date` | date | |
@@ -186,58 +188,39 @@ Core lead table.
 | `partner_id` | uuid | FK → `partners.id`, SET NULL on delete |
 | `followups` | jsonb | Array of `{ date, note }` |
 | `docs` | jsonb | Array of `{ name, size, date }` |
-| `mailing_address` | text | From skip trace |
+| `mailing_address` | text | From skip trace or CSV import |
 | `skip_relatives` | text | From skip trace |
 
 ### `buyers`
-
-Cash buyers and investor contacts.
 
 | Column | Type | Notes |
 |---|---|---|
 | `id` | uuid | Primary key |
 | `created_at` | timestamptz | |
 | `name` | text | Required |
-| `phone` | text | |
-| `email` | text | |
-| `company` | text | |
+| `phone` / `email` / `company` | text | |
 | `areas` | text | Geographic areas of interest |
 | `notes` | text | |
-| `max_price` | numeric | |
-| `min_price` | numeric | |
+| `max_price` / `min_price` | numeric | |
 | `buyer_type` | text | Enum: `cash`, `flipper`, `landlord`, `realtor`, `wholesaler`, `lender` |
 | `prop_types` | jsonb | Array of property type strings |
 
 ### `money_partners`
 
-Financing partners with deal history and communication logs.
-
 | Column | Type | Notes |
 |---|---|---|
 | `id` | uuid | Primary key |
-| `created_at` | timestamptz | |
 | `name` | text | Required |
-| `company` | text | |
-| `phone` / `phone2` | text | Primary and secondary phone |
-| `phone2_label` | text | Label for secondary phone |
-| `email` / `email2` | text | |
-| `address`, `city`, `state`, `zip` | text | Physical address |
-| `mailing_address` | text | |
-| `website` | text | |
-| `partner_type` | text | Primary type label |
-| `partner_types` | jsonb | Array of type strings |
+| `company`, `phone`, `email`, `address`, `city`, `state`, `zip` | text | |
+| `mailing_address`, `phone2`, `phone2_label`, `email2`, `website` | text | |
+| `partner_type` | text | Primary type |
+| `partner_types` | jsonb | Array |
 | `availability` | text | Enum: `active`, `paused`, `deployed` |
-| `capital_available` | numeric | Current available capital |
-| `total_capital` | numeric | Total capital under management |
-| `min_deal_size` / `max_deal_size` | numeric | |
-| `interest_rate` | numeric | |
-| `points` | numeric | Origination points |
-| `term_length` | text | Loan term description |
-| `invest_type` | text | Investment type |
-| `asset_types` | jsonb | Array of asset type strings |
-| `asset_type_custom` | text | Custom asset type override |
-| `locations` | text | Geographic focus areas |
-| `notes` | text | |
+| `capital_available` / `total_capital` / `min_deal_size` / `max_deal_size` | numeric | |
+| `interest_rate` / `points` | numeric | |
+| `term_length` / `invest_type` | text | |
+| `asset_types` | jsonb | Array |
+| `asset_type_custom` / `locations` / `notes` | text | |
 | `deals` | jsonb | Array of `{ date, amount, property, return_to_partner, notes }` |
 | `comm_log` | jsonb | Array of `{ date, note, next_followup }` |
 
@@ -245,140 +228,111 @@ Financing partners with deal history and communication logs.
 
 ## 6. API Reference
 
-All routes are under `/api`. CORS is enabled for all origins via `src/middleware.ts`.
+All routes are under `/api`. CORS is open for all origins via `src/middleware.ts`.
 
 ### Authentication
 
-Routes check the `x-api-key` request header against `API_SECRET_KEY`. If `API_SECRET_KEY` is not set, all requests are allowed (useful for local development). Unauthorized requests receive a `401` response.
+Routes check `x-api-key` header against `API_SECRET_KEY`. If unset, all requests are allowed (dev mode).
 
 ```
-x-api-key: <API_SECRET_KEY value>
+x-api-key: adva-zap-2024-xK9mP
 ```
 
-### `GET /api/health`
+---
 
-Returns Supabase connection status and environment variable presence. No API key required.
+### Health
 
-**Response:**
-```json
-{
-  "supabase_url": "https://xxx.supabase.co",
-  "has_anon_key": true,
-  "has_service_key": true,
-  "has_api_secret": true,
-  "db_connection": "OK"
-}
-```
+#### `GET /api/health`
+Returns Supabase connection status and which env vars are present. No auth required.
 
 ---
 
 ### Properties
 
 #### `GET /api/properties`
-Returns all properties ordered by `created_at` descending.
+All properties, newest first.
 
 #### `POST /api/properties`
-Creates a new property (lead).
+Creates a new property. Handles Realeflow field format — assembles `address` from separate `street`, `city`, `state`, `zipCode` fields. Strips unknown columns before inserting. Fires Zapier notification unless `x-source: zapier` header is present.
 
-**Required body fields:**
-```json
-{ "address": "123 Main St, Atlanta GA" }
-```
-
-**Optional fields:** `owner_name`, `phone`, `email`, `notes`, `status`, `probate_date`, `foreclosure_date`, `auction_date`, `next_followup`, `partner_id`, `mailing_address`, `skip_relatives`
-
-**Response:** `201` with the created record.
+**Required:** at least one address field (`address`, `street`, `city`, etc.)
 
 #### `PATCH /api/properties/[id]`
-Partial update. Send only the fields to change.
-
-#### `DELETE /api/properties/[id]`
-Deletes the property.
-
----
-
-### Partners
-
-#### `GET /api/partners`
-Returns all partners ordered by name.
-
-#### `POST /api/partners`
-Creates a partner. Required: `name`.
-
-#### `DELETE /api/partners/[id]`
-Deletes partner. The `partner_id` column on any linked properties is automatically set to `NULL` via the database foreign key constraint (`ON DELETE SET NULL`).
-
----
-
-### Buyers
-
-#### `GET /api/buyers`
-Returns all buyers.
-
-#### `POST /api/buyers`
-Creates a buyer. Required: `name`.
-
-#### `PATCH /api/buyers/[id]`
 Partial update.
 
-#### `DELETE /api/buyers/[id]`
-Deletes buyer.
+#### `DELETE /api/properties/[id]`
+Deletes property.
 
 ---
 
-### Money Partners
+### Leads (Dedicated Intake Endpoint)
 
-#### `GET /api/money-partners`
-Returns all money partners.
+#### `GET /api/leads`
+Lists all leads. Supports `?status=probate` and `?limit=50` query params.
 
-#### `POST /api/money-partners`
-Creates a money partner. Required: `name`.
+#### `POST /api/leads`
+Dedicated endpoint for new lead intake from Zapier/Realeflow. Same field handling as `POST /api/properties` but returns `{ lead: data }` wrapper. **Use this URL in Zapier.**
 
-#### `PATCH /api/money-partners/[id]`
-Partial update. Used to append deals and comm log entries as well as update profile fields.
+```
+URL:     https://adva-crm-two.vercel.app/api/leads
+Headers: x-api-key: adva-zap-2024-xK9mP
+         x-source: zapier
+         Content-Type: application/json
+```
 
-#### `DELETE /api/money-partners/[id]`
-Deletes money partner.
+**Realeflow field mapping:**
+
+| Realeflow field | CRM field |
+|---|---|
+| `address` (street) | assembled into full `address` |
+| `city` | assembled into full `address` |
+| `state` | assembled into full `address` |
+| `zipCode` | assembled into full `address` |
+| `source` | prepended to `notes` as `[Source: ...]` |
+| `owner_name` / `owner` | `owner_name` |
+| `phone` / `phone_number` | `phone` |
+| `email` | `email` |
+| `notes` / `description` | `notes` |
+
+---
+
+### Enrichment
+
+#### `GET /api/enrich?address=<address>`
+Fetches property details from RentCast (or planned API Ninjas replacement). Returns owner name, beds, baths, sqft, year built, estimated value, equity, last sale, estimated rent.
+
+Returns `503` if no enrichment API key is configured.
+
+> **Current status:** RentCast key is configured locally but not active (requires CC). Pending swap to API Ninjas — see [TODO](#14-todo--planned-features).
+
+---
+
+### Zapier Notification
+
+#### `POST /api/notify-zap`
+Browser-callable endpoint that fires a POST to `ZAP_INBOUND_URL`. Called by `CRMContext.saveProperty` when a new lead is created from the UI.
 
 ---
 
 ### Stats
 
 #### `GET /api/stats`
-Returns aggregated lead counts. No filtering — counts across all properties.
-
-**Response:**
-```json
-{
-  "total": 42,
-  "active": 10,
-  "probate": 8,
-  "foreclosure": 5,
-  "auction": 3,
-  "overdue": 2
-}
-```
+Aggregated lead counts: total, active, probate, foreclosure, auction, overdue.
 
 ---
 
-### Webhook
+### Debug
 
-#### `POST /api/webhook`
-External webhook endpoint for inbound data (e.g. from Realeflow via Zapier). Accepts a property payload and creates or updates a lead.
+#### `POST /api/debug-webhook`
+#### `GET /api/debug-webhook`
+Dev tool — echoes back raw request body, content-type, and parsed JSON. Used to inspect exactly what Zapier/Realeflow sends. Safe to leave in place.
 
 ---
 
 ### Cron
 
 #### `GET /api/cron/keep-alive`
-Runs a lightweight `SELECT id FROM properties LIMIT 1` to keep the Supabase project active on the free tier. Called automatically by Vercel Cron once per day.
-
-**Auth:** `Authorization: Bearer <CRON_SECRET>` (if `CRON_SECRET` is set).
-
-**Response:**
-```json
-{ "ok": true, "pinged_at": "2026-07-14T12:00:00.000Z" }
-```
+Daily Supabase ping. Auth: `Authorization: Bearer <CRON_SECRET>`.
 
 ---
 
@@ -392,34 +346,36 @@ Browser Request
       ▼
 Next.js App Router
       │
-      ├─ layout.tsx (server component)
-      │       │  fetches all data via serverSupabase() (service role)
-      │       │  passes as props to AppShell
+      ├─ layout.tsx (server, force-dynamic)
+      │       │  fetches all data via serverSupabase()
       │       ▼
-      │   AppShell (client component)
-      │       │  mounts CRMProvider + MPProvider with initial data
-      │       │  sets up Supabase Realtime subscriptions
+      │   AppShell → CRMProvider + MPProvider
+      │       │  real-time Supabase subscriptions
       │       ▼
       │   Page Components → Context consumers
       │
       └─ /api/* routes
-              │  authenticate via checkApiKey()
-              │  use serverSupabase() (service role)
-              └─ respond with JSON
+              │  checkApiKey() → serverSupabase()
+              └─ JSON responses
+
+External lead flow:
+  Realeflow (Deal Surge)
+      → Zapier trigger (New Property)
+      → POST /api/leads
+      → Supabase insert
+      → Real-time push to all open browsers
 ```
 
-### Rendering Strategy
+### Rendering
 
-`layout.tsx` exports `export const dynamic = 'force-dynamic'`, which disables Next.js static caching for the root layout. This ensures every page load fetches fresh data from Supabase rather than serving a cached snapshot.
+`layout.tsx` exports `export const dynamic = 'force-dynamic'` — disables Next.js static caching so every page load fetches fresh data from Supabase.
 
 ### Supabase Client Split
 
-| File | Key Used | Used In |
+| File | Key | Used in |
 |---|---|---|
-| `lib/supabase.ts` | Anon key | Browser context (contexts, components) |
-| `lib/supabase-server.ts` | Service role key | Server components, API routes |
-
-The service role key bypasses Supabase Row Level Security (RLS). It is only used server-side and is never exposed to the browser.
+| `lib/supabase.ts` | Anon key | Browser (contexts, components) |
+| `lib/supabase-server.ts` | Service role key | API routes, server components |
 
 ---
 
@@ -427,29 +383,26 @@ The service role key bypasses Supabase Row Level Security (RLS). It is only used
 
 ### CRM Module
 
-All pages under the CRM module are wrapped by `CRMChrome`, which renders the top navigation bar, stats bar, and sync status indicator.
-
 | Route | Component | Description |
 |---|---|---|
-| `/leads` | `LeadsView` | Main lead list. Search, filter by status/partner/date, sort. Opens `PropertyPanel` on click. |
-| `/followup` | `FollowupView` | Shows leads with upcoming or overdue follow-up dates. |
-| `/events` | `EventsView` | Calendar view of probate, foreclosure, and auction dates. |
-| `/map` | `MapView` | Google Maps view plotting all lead addresses. |
-| `/geo` | `GeoView` | Geographic clustering view. |
-| `/partners` | `PartnersView` | Manage sales partners and assign them to leads. |
-| `/letters` | `LettersView` | Mail merge letter generation with template editor. |
-| `/buyers` | `BuyersView` | Buyer/investor directory with type and price range filters. |
-| `/settings` | `SettingsView` | App settings including Google Sheets sync URL. |
+| `/leads` | `LeadsView` | Lead list — search, filter by status/partner/date, sort |
+| `/followup` | `FollowupView` | Leads with upcoming or overdue follow-ups |
+| `/events` | `EventsView` | Calendar of probate, foreclosure, auction dates |
+| `/map` | `MapView` | Google Maps view of all leads |
+| `/geo` | `GeoView` | Geographic clustering view |
+| `/partners` | `PartnersView` | Sales partners management |
+| `/letters` | `LettersView` | Mail merge letter generation |
+| `/buyers` | `BuyersView` | Buyer/investor directory |
+| `/import` | `ImportView` | Bulletproof CSV import with preview + column mapping |
+| `/settings` | `SettingsView` | Sender info, Google Sheets sync, letter templates |
 
 ### Money Partners Module
 
-All pages under this module are wrapped by `MPChrome`.
-
-| Route | Component | Description |
-|---|---|---|
-| `/money-partners` | `MPAllView` | Financing partner list. Opens `MPPanel` on click. |
-| `/money-partners/pipeline` | Pipeline view | Deal pipeline across all money partners. |
-| `/money-partners/deals` | Deals view | All logged deals in one view. |
+| Route | Description |
+|---|---|
+| `/money-partners` | Financing partner list + detail panel |
+| `/money-partners/pipeline` | Deal pipeline view |
+| `/money-partners/deals` | All logged deals |
 
 ---
 
@@ -457,180 +410,160 @@ All pages under this module are wrapped by `MPChrome`.
 
 ### CRMContext (`src/contexts/CRMContext.tsx`)
 
-Holds all CRM state and exposes mutations to the component tree.
+**State:** `properties`, `partners`, `buyers`, `syncStatus`, `syncLabel`, `sender`, `gsUrl`
 
-**State:**
-- `properties: Property[]`
-- `partners: Partner[]`
-- `buyers: Buyer[]`
-- `syncStatus: 'connected' | 'syncing' | 'error'`
-- `syncLabel: string`
-- `sender: SenderInfo` (persisted to localStorage)
-- `gsUrl: string` (Google Sheets CSV URL, persisted to localStorage)
-
-**Mutations:**
+**Key mutations:**
 
 | Method | Description |
 |---|---|
-| `saveProperty(data, id?)` | Create or update a property |
-| `deleteProperty(id)` | Delete a property |
-| `logFollowup(id, date, note, next?)` | Append a follow-up entry to a property |
-| `deleteFU(id, idx)` | Remove a follow-up by index |
-| `uploadDocs(id, files)` | Attach documents to a property (metadata only) |
-| `deleteDoc(id, idx)` | Remove a document by index |
-| `saveSkipTrace(id, ...)` | Save skip trace results (phone, email, mailing, relatives) |
-| `savePartner(name, phone, email, role)` | Create a partner |
-| `deletePartner(id)` | Delete a partner |
-| `saveBuyer(data, id?)` | Create or update a buyer |
-| `deleteBuyer(id)` | Delete a buyer |
-| `importRows(headers, rows)` | Bulk import leads from CSV rows |
-| `syncSheet()` | Fetch and import leads from the configured Google Sheets CSV URL |
-| `generateLetter(type, propId, contact)` | Render a letter template with property data |
-| `printLetterFn(content)` | Trigger browser print for a letter |
+| `saveProperty(data, id?)` | Create or update — new leads fire `/api/notify-zap` |
+| `deleteProperty(id)` | Delete |
+| `logFollowup(id, date, note, next?)` | Append follow-up entry |
+| `deleteFU(id, idx)` | Remove follow-up |
+| `uploadDocs(id, files)` | Attach document metadata |
+| `deleteDoc(id, idx)` | Remove document |
+| `saveSkipTrace(id, ...)` | Save skip trace results |
+| `savePartner / deletePartner` | Partner CRUD |
+| `saveBuyer / deleteBuyer` | Buyer CRUD |
+| `importRows(headers, rows)` | Bulk CSV import using `assembleAddress()` |
+| `syncSheet()` | Fetch Google Sheets CSV and import |
+| `generateLetter / printLetterFn` | Letter generation and print |
 
-**Realtime:** On mount, subscribes to Postgres changes on `properties`, `partners`, and `buyers` tables via `supabase.channel()`. Any INSERT, UPDATE, or DELETE triggers a full `loadAll()` refresh.
-
----
+**Realtime:** Subscribes to Postgres changes on `properties`, `partners`, `buyers`.
 
 ### MPContext (`src/contexts/MPContext.tsx`)
 
-Manages money partner state.
+**State:** `partners` (MoneyPartner[]), sync status
 
-**State:**
-- `partners: MoneyPartner[]`
-- `syncStatus` / `syncLabel`
-
-**Mutations:**
-
-| Method | Description |
-|---|---|
-| `savePartner(data, id?)` | Create or update a money partner |
-| `deletePartner(id)` | Delete a money partner |
-| `logDeal(id, deal)` | Append a deal entry |
-| `deleteDeal(id, idx)` | Remove a deal by index |
-| `logComm(id, entry)` | Append a communication log entry |
-| `deleteComm(id, idx)` | Remove a comm entry by index |
+**Key mutations:** `savePartner`, `deletePartner`, `logDeal`, `deleteDeal`, `logComm`, `deleteComm`
 
 ---
 
 ## 10. Key Components
 
-### `AppShell.tsx`
-Root client component. Receives initial data from the server-rendered layout and mounts `CRMProvider` and `MPProvider`. All child components have access to both contexts.
+### `ImportView.tsx` (new)
 
-### `CRMChrome.tsx`
-Navigation shell for the CRM module. Renders:
-- App title and module switcher
-- Tab bar linking to all CRM pages
-- Real-time sync status badge
-- Statistics bar (Total, Active, Probate, Foreclosure, Auction, Overdue counts derived from context state)
+Three-stage CSV import flow:
+1. **Upload** — drag & drop, accepts `.csv`, `.tsv`, `.txt`
+2. **Preview** — shows first 5 rows, editable column mapping dropdowns, assembled address preview
+3. **Done** — added / updated / skipped counts, link to leads
+
+Supports county export formats: comma, tab, semicolon, pipe delimited. Recognizes county-specific headers: `situs`, `grantor`, `taxpayer`, `lis pendens`, `trustee sale`, `case filed`.
+
+### `PropertyPanel.tsx` (updated)
+
+Added **✦ Enrich** button:
+- Calls `GET /api/enrich?address=<address>`
+- Shows blue card: owner name, estimated value, equity, beds/baths/sqft, year built, last sale, estimated rent
+- **Save to property** fills `owner_name` (if empty) and appends `[Property Data]` block to notes
+- Gracefully shows error if enrichment API key not configured
+
+### `CRMChrome.tsx` (updated)
+
+Added `⬆️ Import` tab to navigation bar.
 
 ### `LeadsView.tsx`
-Most complex component. Manages:
-- Text search across address, owner name, phone, email, notes
-- Status filter (All / Active / Probate / Foreclosure / Auction)
-- Partner filter
-- Date range filter (from / to)
-- Sort order (Newest, Oldest, Next Follow-up, Owner A–Z)
-- Selected property state → renders `PropertyPanel`
-- `AddPropertyModal` for new lead creation
 
-### `PropertyPanel.tsx`
-Side panel showing full lead detail. Features:
-- View and edit all property fields
-- Follow-up log (add, view, delete entries)
-- Document list (upload, delete)
-- Skip trace data entry (`SkipTraceModal`)
-- Partner assignment dropdown
-- Status change buttons
-- Delete lead
+Search, filter (status/partner/date range), sort. Opens `PropertyPanel` on selection.
 
 ### `LettersView.tsx`
-Mail merge system. Features:
-- Sender info form (name, company, address) persisted to localStorage
-- Template editor for 6 letter types: `probate_owner`, `probate_lawfirm`, `foreclosure_owner`, `foreclosure_lawfirm`, `cashoffer`, `followup`
-- Property selector and contact type selector
-- Live letter preview with property data interpolated
-- Print button
 
-### `MPPanel.tsx`
-Money partner detail panel. Features:
-- Full profile editing (contact info, financial terms, asset types)
-- Deal log with amounts, property, and return terms
-- Communication log with follow-up scheduling
-- Availability status toggle (Active / Paused / Deployed)
+Mail merge for 6 letter types: probate owner/lawfirm, foreclosure owner/lawfirm, cash offer, follow-up.
 
 ---
 
 ## 11. External Integrations
 
-### Zapier
+### Realeflow → Zapier → ADVA CRM
 
-Zapier can push new leads into the CRM by calling the `/api/properties` endpoint.
+**Flow:** New property saved in Deal Surge → Zapier "New Property" trigger → `POST /api/leads`
 
-**Zapier Action config:**
-- Method: `POST`
-- URL: `https://adva-crm-two.vercel.app/api/properties`
-- Header: `x-api-key: <API_SECRET_KEY>`
-- Header: `Content-Type: application/json`
-- Body: JSON with `address`, `owner_name`, `phone`, `status`, etc.
+**Zapier action config:**
+```
+Method:        POST
+URL:           https://adva-crm-two.vercel.app/api/leads
+Payload Type:  JSON
+Unflatten:     No  ← IMPORTANT: must be disabled
 
-Test with curl:
-```bash
-curl -X POST https://adva-crm-two.vercel.app/api/properties \
-  -H "Content-Type: application/json" \
-  -H "x-api-key: <API_SECRET_KEY>" \
-  -d '{"address": "123 Main St", "owner_name": "John Doe", "status": "lead"}'
+Headers:
+  x-api-key   →  adva-zap-2024-xK9mP
+  x-source    →  zapier
+
+Data:
+  address     →  Realeflow: Property Address (street)
+  city        →  Realeflow: City
+  state       →  Realeflow: State
+  zipCode     →  Realeflow: Zip Code
+  owner_name  →  Realeflow: Owner Name
+  phone       →  Realeflow: Phone
+  email       →  Realeflow: Email
+  status      →  lead  (hardcoded)
 ```
 
-### Google Sheets CSV Import
+**Loop prevention:** The `x-source: zapier` header tells the CRM to skip the outbound Zapier notification, preventing infinite loops.
 
-The CRM can pull leads from a published Google Sheets CSV. Configure the sheet URL in `/settings`. The `syncSheet()` function in `CRMContext` fetches the CSV, auto-detects column headers, and runs `importRows()` to upsert leads (matched by address).
-
-The sheet must be published as CSV: **File → Share → Publish to web → CSV**.
+**Known Realeflow payload format:**
+```json
+{
+  "address": "9428 S 69 E Ave",
+  "city": "Tulsa",
+  "state": "OK",
+  "zipCode": "74133",
+  "source": "Leadflow Mobile App Followed Property",
+  "created": "2026-03-18T03:28:15Z",
+  "id": "adab9e4d-...",
+  "propertyId": "122573833"
+}
+```
 
 ### Google Maps
 
-`MapView` and `GeoView` use the Google Maps JavaScript API to plot lead addresses. Requires `NEXT_PUBLIC_GOOGLE_MAPS_KEY` to be set.
+`MapView` and `GeoView` use the Google Maps JavaScript API. Key: `NEXT_PUBLIC_GOOGLE_MAPS_KEY`.
+
+### Google Sheets CSV Sync
+
+Configure a published Google Sheets CSV URL in `/settings`. The CRM fetches it and runs the same import logic as the CSV upload. Sheet must be published as: **File → Share → Publish to web → CSV**.
+
+### Property Enrichment (RentCast — pending replacement)
+
+`GET /api/enrich?address=` calls RentCast's `/properties` and `/avm/value` endpoints in parallel. Requires `RENTCAST_API_KEY`. Currently inactive — planned replacement with API Ninjas (see TODO).
 
 ---
 
 ## 12. Deployment
 
-The app is deployed on Vercel. Pushes to `main` trigger automatic deployments.
+**Platform:** Vercel  
+**Production URL:** `https://adva-crm-two.vercel.app`  
+**Trigger:** Every push to `main` auto-deploys
 
-**Production URL:** `https://adva-crm-two.vercel.app`
+**Required Vercel environment variables:** See Section 4.
 
-**Vercel project settings needed:**
-- All environment variables from Section 4
-- No special build configuration — Vercel auto-detects Next.js
+**Local development:**
+```bash
+npm install
+# copy .env.local and fill in values
+npm run dev
+# runs at http://localhost:3000
+```
 
-**Build command:** `next build` (Vercel default)
-**Output:** `.next/` (Vercel default)
+**Database setup:** Run `supabase/schema.sql` once in Supabase → SQL Editor.
 
 ---
 
 ## 13. Infrastructure & Maintenance
 
-### Supabase Keep-Alive (Free Tier)
+### Supabase Keep-Alive
 
-Supabase pauses projects after 7 days of inactivity on the free plan. A Vercel Cron Job prevents this by pinging the database daily.
+Free tier pauses after 7 days of inactivity. Vercel cron job prevents this:
 
-**Config in `vercel.json`:**
 ```json
+// vercel.json
 {
-  "crons": [
-    {
-      "path": "/api/cron/keep-alive",
-      "schedule": "0 12 * * *"
-    }
-  ]
+  "crons": [{ "path": "/api/cron/keep-alive", "schedule": "0 12 * * *" }]
 }
 ```
 
-The cron runs every day at **12:00 UTC**. It performs a `SELECT id FROM properties LIMIT 1` query — enough to count as activity for Supabase. The endpoint is secured with `CRON_SECRET` (Vercel passes it automatically as `Authorization: Bearer <secret>`).
-
-To verify it is working, check **Vercel Dashboard → Project → Cron Jobs**.
+Runs daily at 12:00 UTC. Secured with `CRON_SECRET`. Monitor at: **Vercel Dashboard → Project → Cron Jobs**.
 
 ### Health Check
 
@@ -638,41 +571,147 @@ To verify it is working, check **Vercel Dashboard → Project → Cron Jobs**.
 curl https://adva-crm-two.vercel.app/api/health
 ```
 
-Expected response when everything is healthy:
-```json
-{
-  "supabase_url": "https://gqqavajgrzwouduiptlr.supabase.co",
-  "has_anon_key": true,
-  "has_service_key": true,
-  "has_api_secret": true,
-  "db_connection": "OK"
-}
-```
-
 ### Adding a New Table
 
-1. Write the `CREATE TABLE` SQL in `supabase/schema.sql`
-2. Run it in **Supabase → SQL Editor**
-3. Enable realtime: `ALTER PUBLICATION supabase_realtime ADD TABLE public.<table_name>;`
-4. Add the TypeScript interface to `src/types/index.ts`
+1. Write `CREATE TABLE` SQL in `supabase/schema.sql`
+2. Run in Supabase → SQL Editor
+3. Enable realtime: `ALTER PUBLICATION supabase_realtime ADD TABLE public.<name>;`
+4. Add TypeScript interface to `src/types/index.ts`
 5. Add API routes under `src/app/api/<resource>/`
-6. Add fetch logic to the relevant context (`CRMContext` or `MPContext`)
-7. Update `layout.tsx` to fetch the new table's initial data server-side
+6. Add fetch logic to relevant context
+7. Update `layout.tsx` to fetch initial data server-side
 
-### Local Development
+### Branch Workflow
 
-```bash
-# Install dependencies
-npm install
-
-# Copy environment variables
-cp .env.local.example .env.local
-# Fill in Supabase URL, keys, and Google Maps key
-
-# Run dev server
-npm run dev
+All changes go through feature branches — never commit directly to `main`:
+```
+git checkout -b feature/<name>
+# make changes, commit
+git checkout main
+git merge feature/<name>
+git push origin main
 ```
 
-App runs at `http://localhost:3000`.
+---
 
-To set up the database locally, run `supabase/schema.sql` against your Supabase project in the SQL Editor.
+## 14. TODO — Planned Features
+
+Features discussed and planned but not yet built, in priority order:
+
+---
+
+### TODO 1 — Swap Enrichment API to API Ninjas (Next up)
+
+**Why:** RentCast requires a credit card even on the free tier. API Ninjas has 10,000 free calls/month with no credit card required.
+
+**What to do:**
+1. Sign up at `api-ninjas.com` → get free API key
+2. Add `API_NINJAS_KEY` to Vercel env vars
+3. Replace `src/app/api/enrich/route.ts` to call `https://api.api-ninjas.com/v1/realestate`
+4. Auth header: `X-Api-Key: <key>`
+5. Update `PropertyPanel.tsx` if response fields differ
+6. Remove `RENTCAST_API_KEY` from env
+
+**API Ninjas returns:** address, beds, baths, sqft, year built, property type, list price  
+**Does NOT return:** owner name, equity (those are paywalled everywhere)
+
+---
+
+### TODO 2 — Mobile Quick-Add (Driving for Dollars)
+
+**Why:** When you're driving neighborhoods, you need to add a lead from your phone in under 10 seconds.
+
+**What to build:**
+- New route `/quick-add` — stripped-down single-page form
+- Fields: address (with autocomplete via Google Maps), owner name, phone, notes, status
+- Large tap targets, no sidebar/navigation clutter
+- Auto-detect current location to pre-fill city/state
+- Save goes directly to Supabase, shows confirmation, resets form
+- Works offline-first with a retry queue (localStorage fallback)
+
+---
+
+### TODO 3 — Lead Scoring / Hot Lead Flagging
+
+**Why:** Not all leads are equal. A vacant + tax delinquent + probate property is far more motivated than a regular listing.
+
+**What to build:**
+- Score each property 0–100 based on signals:
+  - Has probate date: +30
+  - Has foreclosure date: +30
+  - Has auction date: +25
+  - Status is active: +15
+  - No contact info (harder to reach): -10
+  - Follow-up overdue: +20
+  - Notes contain keywords (vacant, distressed, motivated): +15
+- Show score badge on `PropertyCard`
+- Add "Hot Leads" filter to `LeadsView` (score > 60)
+- Sort by score option
+
+---
+
+### TODO 4 — County Record Scraper
+
+**Why:** Instead of manually downloading CSVs, auto-import new county filings weekly.
+
+**What to build:**
+- Vercel cron job running weekly (`0 9 * * 1` — Monday 9am)
+- Start with one county: configure target county's public assessor/court URL
+- Scraper fetches the public page, extracts new filings, runs them through `importRows()`
+- Notify via email when new leads are imported
+- Make it configurable (Settings page → add county scraper URL)
+
+**Complexity:** Medium-high — each county has a different portal format.
+
+---
+
+### TODO 5 — Email Follow-up Reminders (Resend)
+
+**Why:** When a follow-up date is missed, nothing happens. Automated email reminders fix this.
+
+**What to build:**
+- Daily cron job checks for properties where `next_followup <= today`
+- Sends email via **Resend** (free tier: 3,000 emails/month, no credit card)
+- Email shows: property address, owner name, days overdue, link to CRM
+- Configure recipient email in Settings
+- Sign up at `resend.com`, get API key, add `RESEND_API_KEY` to Vercel env vars
+
+---
+
+### TODO 6 — SMS Notifications via Twilio
+
+**Why:** Email is easy to miss. SMS for hot follow-ups gets attention immediately.
+
+**What to build:**
+- When a lead is marked as high-priority or follow-up is overdue > 3 days, send SMS
+- Use **Twilio** (free trial credit, then pay-per-message ~$0.0079/SMS)
+- Configure phone number in Settings
+- Add `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` to Vercel env vars
+
+---
+
+### TODO 7 — Zapier Debugging / Reliability
+
+**Why:** The Zapier → ADVA CRM connection has had issues (unflatten setting, field mapping).
+
+**Remaining items:**
+- Confirm `Unflatten: No` is set in Zapier webhook action
+- Test full end-to-end: add property in Deal Surge → appears in CRM within 2 minutes
+- Consider adding a Zapier test trigger button in `/settings` that sends a test lead
+- Add webhook delivery log to the CRM so you can see incoming Zapier requests
+
+---
+
+### TODO 8 — Free Lead Sources (No Paid API)
+
+**Why:** Instead of relying only on Realeflow, pull leads from public free sources.
+
+**Sources to integrate:**
+- **HUD REO listings** — `hudgov` API, completely free
+- **Fannie Mae HomePath** — public listings, scrapeable
+- **Tax delinquent lists** — county-by-county, most publish CSV downloads
+- **Driving for Dollars** — covered by TODO 2 (mobile quick-add)
+
+---
+
+*Last updated: 2026-07-23*
