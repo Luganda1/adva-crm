@@ -2,6 +2,23 @@ import type { Property } from '@/types'
 
 export const todayStr = () => new Date().toISOString().slice(0, 10)
 
+// Free, no-API-key research links for an address. Zillow and Redfin have no
+// public address-lookup API (and Zillow's own /homes/<query>_rb/ search URL
+// blocks non-browser requests, and both risk landing on a fuzzy-matched
+// property for an ambiguous address) — a Google search scoped to the site
+// reliably lands on the right result page without guessing either site's
+// internal URL/ID scheme. Google Maps uses its own officially documented
+// URL scheme (maps.google.com/search), so that one links directly.
+export function zillowSearchUrl(address: string): string {
+  return `https://www.google.com/search?q=${encodeURIComponent('site:zillow.com ' + address)}`
+}
+export function redfinSearchUrl(address: string): string {
+  return `https://www.google.com/search?q=${encodeURIComponent('site:redfin.com ' + address)}`
+}
+export function googleMapsUrl(address: string): string {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
+}
+
 export function fmtD(d: string | null | undefined): string {
   if (!d) return ''
   const [y, m, day] = d.split('-')

@@ -1,6 +1,6 @@
 'use client'
 import { useState } from 'react'
-import { fmtD, fmt$, todayStr } from '@/lib/utils'
+import { fmtD, fmt$, todayStr, zillowSearchUrl, redfinSearchUrl, googleMapsUrl } from '@/lib/utils'
 import { useCRM } from '@/contexts/CRMContext'
 import type { Property, Partner } from '@/types'
 import type { EnrichResult } from '@/app/api/enrich/route'
@@ -73,6 +73,15 @@ export default function PropertyPanel({ property: p, partners, onClose, onEdit, 
           <button className="btn btn-outline btn-sm" onClick={onClose}>✕</button>
         </div>
       </div>
+
+      {p.address && (
+        <div className="flex gap-2 flex-wrap px-5 py-2.5" style={{ borderBottom: '1px solid var(--border)', background: 'var(--gray-light)' }}>
+          <span className="text-xs flex-shrink-0" style={{ color: 'var(--gray)' }}>Research:</span>
+          <a href={zillowSearchUrl(p.address)} target="_blank" rel="noopener noreferrer" className="text-xs font-medium" style={{ color: 'var(--orange)' }}>🔎 Zillow</a>
+          <a href={redfinSearchUrl(p.address)} target="_blank" rel="noopener noreferrer" className="text-xs font-medium" style={{ color: 'var(--orange)' }}>🔎 Redfin</a>
+          <a href={googleMapsUrl(p.address)} target="_blank" rel="noopener noreferrer" className="text-xs font-medium" style={{ color: 'var(--orange)' }}>🗺️ Maps</a>
+        </div>
+      )}
 
       {hasListingData && (
         <section style={{ borderBottom: '1px solid var(--border)' }}>
