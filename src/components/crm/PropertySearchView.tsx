@@ -40,7 +40,7 @@ export default function PropertySearchView() {
       r.sqft != null ? `${r.sqft.toLocaleString()} sqft` : null, r.yearBuilt ? `built ${r.yearBuilt}` : null,
       r.listPrice != null ? `list ${fmt$(r.listPrice)}` : null, r.estimatedValue != null ? `est. value ${fmt$(r.estimatedValue)}` : null,
     ].filter(Boolean).join(', ')
-    const notes = [`MLS# ${r.mlsNumber}`, details].filter(Boolean).join(' | ')
+    const notes = [`[Property Search] MLS# ${r.mlsNumber}`, details].filter(Boolean).join(' | ')
 
     setAddError('')
     try {
