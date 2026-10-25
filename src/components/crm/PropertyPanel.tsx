@@ -16,6 +16,9 @@ export default function PropertyPanel({ property: p, partners, onClose, onEdit, 
   const docs = Array.isArray(p.docs) ? p.docs : []
   const dateItems = ([['Probate', p.probate_date], ['Foreclosure', p.foreclosure_date], ['Auction', p.auction_date], ['Next Follow-up', p.next_followup]] as [string, string | null][]).filter(([, d]) => d)
 
+  const stats = [p.beds != null && `${p.beds} bd`, p.baths != null && `${p.baths} ba`, p.sqft != null && `${p.sqft.toLocaleString()} sqft`].filter(Boolean)
+  const hasListingData = !!(p.image_url || p.list_price != null || stats.length > 0)
+
   const [enrichData, setEnrichData]     = useState<EnrichResult | null>(null)
   const [enrichLoading, setEnrichLoading] = useState(false)
   const [enrichError, setEnrichError]   = useState<string | null>(null)
@@ -70,6 +73,21 @@ export default function PropertyPanel({ property: p, partners, onClose, onEdit, 
           <button className="btn btn-outline btn-sm" onClick={onClose}>✕</button>
         </div>
       </div>
+
+      {hasListingData && (
+        <section style={{ borderBottom: '1px solid var(--border)' }}>
+          {p.image_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={p.image_url} alt={p.address} className="w-full h-48 object-cover" />
+          ) : (
+            <div className="w-full h-48 flex items-center justify-center text-5xl" style={{ background: 'var(--gray-light)', color: '#ccc' }}>🏠</div>
+          )}
+          <div className="px-5 py-4">
+            {p.list_price != null && <div className="font-heading font-bold text-2xl leading-none mb-1.5">{fmt$(p.list_price)}</div>}
+            {stats.length > 0 && <div className="text-sm font-medium" style={{ color: 'var(--gray)' }}>{stats.join(' · ')}</div>}
+          </div>
+        </section>
+      )}
 
       <section className="px-5 py-4" style={{ borderBottom: '1px solid var(--border)' }}>
         <div className="panel-sec-title mb-3">Owner Contact</div>

@@ -31,7 +31,12 @@ CREATE TABLE IF NOT EXISTS public.properties (
   followups jsonb DEFAULT '[]',
   docs jsonb DEFAULT '[]',
   mailing_address text,
-  skip_relatives text
+  skip_relatives text,
+  image_url text,
+  beds integer,
+  baths numeric,
+  sqft integer,
+  list_price numeric
 );
 
 -- Buyers
@@ -85,6 +90,18 @@ CREATE TABLE IF NOT EXISTS public.money_partners (
   deals jsonb DEFAULT '[]',
   comm_log jsonb DEFAULT '[]'
 );
+
+-- ============================================================
+-- Migration — MLS-style listing details on properties
+-- (image, beds, baths, sqft, list price) for the property card/panel.
+-- Safe to re-run: CREATE TABLE above is IF NOT EXISTS, so an existing
+-- table needs these added explicitly.
+-- ============================================================
+ALTER TABLE public.properties ADD COLUMN IF NOT EXISTS image_url text;
+ALTER TABLE public.properties ADD COLUMN IF NOT EXISTS beds integer;
+ALTER TABLE public.properties ADD COLUMN IF NOT EXISTS baths numeric;
+ALTER TABLE public.properties ADD COLUMN IF NOT EXISTS sqft integer;
+ALTER TABLE public.properties ADD COLUMN IF NOT EXISTS list_price numeric;
 
 -- Enable realtime on all tables
 ALTER PUBLICATION supabase_realtime ADD TABLE public.properties;

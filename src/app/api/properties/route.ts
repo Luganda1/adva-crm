@@ -60,6 +60,11 @@ export async function POST(req: NextRequest) {
     partner_id: (body.partner_id || null) as string | null,
     mailing_address: (body.mailing_address || null) as string | null,
     skip_relatives: (body.skip_relatives || null) as string | null,
+    image_url: (body.image_url || null) as string | null,
+    beds: (typeof body.beds === 'number' ? body.beds : null) as number | null,
+    baths: (typeof body.baths === 'number' ? body.baths : null) as number | null,
+    sqft: (typeof body.sqft === 'number' ? body.sqft : null) as number | null,
+    list_price: (typeof body.list_price === 'number' ? body.list_price : null) as number | null,
     // Honor caller-supplied followups/docs (e.g. the UI seeding a note on create)
     // instead of always forcing them empty — external payloads never send these.
     followups: Array.isArray(body.followups) ? body.followups : [],

@@ -44,7 +44,10 @@ export default function PropertySearchView() {
 
     setAddError('')
     try {
-      const id = await saveProperty({ address: fullAddress, notes, status: 'lead' })
+      const id = await saveProperty({
+        address: fullAddress, notes, status: 'lead',
+        image_url: r.image, list_price: r.listPrice, beds: r.beds, baths: r.baths, sqft: r.sqft,
+      })
       // saveProperty doesn't surface Supabase errors (e.g. an RLS rejection) — it just
       // returns '' — so treat a falsy id as a failed write, not a success.
       if (!id) throw new Error('Save returned no id — check Supabase write permissions (RLS).')
