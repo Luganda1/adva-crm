@@ -76,25 +76,25 @@ export default function PropertyPanel({ property: p, partners, onClose, onEdit, 
 
       {hasListingData ? (
         <section style={{ borderBottom: '1px solid var(--border)' }}>
-          {p.image_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={p.image_url} alt={p.address} className="w-full h-48 object-cover" />
-          ) : (
-            <div className="w-full h-48 flex items-center justify-center text-5xl" style={{ background: 'var(--gray-light)', color: '#ccc' }}>🏠</div>
-          )}
-          <div className="px-5 py-4 flex items-end justify-between gap-3">
-            <div className="min-w-0">
-              {p.list_price != null && <div className="font-heading font-bold text-2xl leading-none mb-1.5">{fmt$(p.list_price)}</div>}
-              {stats.length > 0 && <div className="text-sm font-medium" style={{ color: 'var(--gray)' }}>{stats.join(' · ')}</div>}
-            </div>
-            {p.address && (
-              <a href={zillowUrl(p.address)} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-sm flex-shrink-0">🏠 Zillow</a>
+          <div className="relative">
+            {p.image_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={p.image_url} alt={p.address} className="w-full h-48 object-cover" />
+            ) : (
+              <div className="w-full h-48 flex items-center justify-center text-5xl" style={{ background: 'var(--gray-light)', color: '#ccc' }}>🏠</div>
             )}
+            {p.address && (
+              <a href={zillowUrl(p.address)} target="_blank" rel="noopener noreferrer" className="zillow-badge zillow-badge-float">Zillow</a>
+            )}
+          </div>
+          <div className="px-5 py-4">
+            {p.list_price != null && <div className="font-heading font-bold text-2xl leading-none mb-1.5">{fmt$(p.list_price)}</div>}
+            {stats.length > 0 && <div className="text-sm font-medium" style={{ color: 'var(--gray)' }}>{stats.join(' · ')}</div>}
           </div>
         </section>
       ) : p.address && (
         <div className="px-5 py-2.5 flex justify-end" style={{ borderBottom: '1px solid var(--border)' }}>
-          <a href={zillowUrl(p.address)} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-sm">🏠 Zillow</a>
+          <a href={zillowUrl(p.address)} target="_blank" rel="noopener noreferrer" className="zillow-badge">Zillow</a>
         </div>
       )}
 
