@@ -62,9 +62,6 @@ export default function PropertyPanel({ property: p, partners, onClose, onEdit, 
       <div className="flex items-center justify-between px-5 py-3.5 sticky top-0 bg-white z-10" style={{ borderBottom: '1px solid var(--border)' }}>
         <h2 className="font-heading font-bold text-sm truncate mr-2">{p.address || '(No address)'}</h2>
         <div className="flex gap-1.5 flex-shrink-0 flex-wrap">
-          {p.address && (
-            <a href={zillowUrl(p.address)} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-sm">🏠 Zillow</a>
-          )}
           <button className="btn btn-outline btn-sm" onClick={onEdit}>Edit</button>
           <button className="btn btn-outline btn-sm" onClick={onSkipTrace}>Skip Trace</button>
           <button className="btn btn-outline btn-sm" onClick={handleEnrich} disabled={enrichLoading}>
@@ -77,7 +74,7 @@ export default function PropertyPanel({ property: p, partners, onClose, onEdit, 
         </div>
       </div>
 
-      {hasListingData && (
+      {hasListingData ? (
         <section style={{ borderBottom: '1px solid var(--border)' }}>
           {p.image_url ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -85,11 +82,20 @@ export default function PropertyPanel({ property: p, partners, onClose, onEdit, 
           ) : (
             <div className="w-full h-48 flex items-center justify-center text-5xl" style={{ background: 'var(--gray-light)', color: '#ccc' }}>🏠</div>
           )}
-          <div className="px-5 py-4">
-            {p.list_price != null && <div className="font-heading font-bold text-2xl leading-none mb-1.5">{fmt$(p.list_price)}</div>}
-            {stats.length > 0 && <div className="text-sm font-medium" style={{ color: 'var(--gray)' }}>{stats.join(' · ')}</div>}
+          <div className="px-5 py-4 flex items-end justify-between gap-3">
+            <div className="min-w-0">
+              {p.list_price != null && <div className="font-heading font-bold text-2xl leading-none mb-1.5">{fmt$(p.list_price)}</div>}
+              {stats.length > 0 && <div className="text-sm font-medium" style={{ color: 'var(--gray)' }}>{stats.join(' · ')}</div>}
+            </div>
+            {p.address && (
+              <a href={zillowUrl(p.address)} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-sm flex-shrink-0">🏠 Zillow</a>
+            )}
           </div>
         </section>
+      ) : p.address && (
+        <div className="px-5 py-2.5 flex justify-end" style={{ borderBottom: '1px solid var(--border)' }}>
+          <a href={zillowUrl(p.address)} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-sm">🏠 Zillow</a>
+        </div>
       )}
 
       <section className="px-5 py-4" style={{ borderBottom: '1px solid var(--border)' }}>
