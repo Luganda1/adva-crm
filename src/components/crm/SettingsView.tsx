@@ -11,12 +11,10 @@ const LETTER_TYPES: { value: LetterType; label: string }[] = [
 ]
 
 export default function SettingsView() {
-  const { sender, updateSender, gsUrl, setGsUrl, syncSheet, syncHud, importRows, tplBody, saveTpl, resetTpl, matchNotes, saveNoteToProperty, saveNoteAsNew } = useCRM()
+  const { sender, updateSender, gsUrl, setGsUrl, syncSheet, importRows, tplBody, saveTpl, resetTpl, matchNotes, saveNoteToProperty, saveNoteAsNew } = useCRM()
   const [senderSaved, setSenderSaved] = useState(false)
   const sTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const [gsStatus, setGsStatus] = useState('')
-  const [hudStatus, setHudStatus] = useState('')
-  const [hudSyncing, setHudSyncing] = useState(false)
   const [tplKey, setTplKey] = useState<LetterType>('probate_owner')
   const [tplText, setTplText] = useState(() => tplBody('probate_owner'))
   const [tplSaved, setTplSaved] = useState(false)
@@ -37,7 +35,6 @@ export default function SettingsView() {
   function onResetTpl() { if (!confirm('Reset to default? Your edits will be lost.')) return; resetTpl(tplKey); setTplText(tplBody(tplKey)) }
 
   async function handleSync() { setGsStatus('Syncing...'); setGsStatus(await syncSheet()) }
-  async function handleHudSync() { setHudSyncing(true); setHudStatus('Syncing...'); setHudStatus(await syncHud()); setHudSyncing(false) }
   async function handleCSV(file: File) {
     const rows = parseCSV(await file.text())
     if (rows.length < 2) { alert('CSV appears empty'); return }
@@ -73,17 +70,6 @@ export default function SettingsView() {
         <div className="flex items-center gap-3 flex-wrap">
           <button className="btn btn-primary" onClick={handleSync}>↻ Sync Now</button>
           {gsStatus && <span className="text-xs" style={{ color: gsStatus.startsWith('✓') ? 'var(--green)' : gsStatus.includes('failed') ? 'var(--red)' : 'var(--gray)' }}>{gsStatus}</span>}
-        </div>
-      </div>
-
-      <h2 className="font-heading font-bold text-base mb-1">🏛️ HUD REO Leads</h2>
-      <p className="text-sm mb-4" style={{ color: 'var(--gray)' }}>
-        Free, official HUD dataset of FHA foreclosed (REO) properties nationwide. Also runs automatically every Monday — this button runs it on demand. New leads get no price/beds/baths (not in HUD's dataset); run Enrich or Property Search on them afterward for that.
-      </p>
-      <div className="bg-white border border-gray-200 rounded-xl p-6 mb-7 shadow-sm">
-        <div className="flex items-center gap-3 flex-wrap">
-          <button className="btn btn-primary" onClick={handleHudSync} disabled={hudSyncing}>{hudSyncing ? 'Syncing...' : '↻ Sync Now'}</button>
-          {hudStatus && <span className="text-xs" style={{ color: hudStatus.startsWith('✓') ? 'var(--green)' : hudStatus.startsWith('Sync failed') ? 'var(--red)' : 'var(--gray)' }}>{hudStatus}</span>}
         </div>
       </div>
 

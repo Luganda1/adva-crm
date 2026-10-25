@@ -1,10 +1,16 @@
-import { serverSupabase } from '@/lib/supabase-server'
-
 // HUD publishes its FHA Single Family REO (foreclosed, HUD-owned) inventory
 // as a free, public, no-auth ArcGIS FeatureServer — a real official dataset,
 // not a scraper. No price/beds/baths (just address + case metadata); run
 // through /api/enrich or Property Search afterward for the rest.
 // https://catalog.data.gov/dataset/fha-single-family-reo-properties-for-sale
+//
+// This is read-only and does NOT write to the properties table — it's a
+// browse source for /hud-leads, which adds individual properties to the CRM
+// one at a time on request (same pattern as Property Search). An earlier
+// version of this file bulk-inserted every listing automatically on a cron,
+// which dumped 621 properties straight into the leads list unasked. Don't
+// bring that back — any future "sync all" feature needs to be opt-in and
+// reviewable, not automatic.
 const HUD_REO_FEATURE_SERVER =
   'https://services.arcgis.com/VTyQ9soqVukalItT/arcgis/rest/services/SF_REO/FeatureServer/0/query'
 
@@ -25,14 +31,17 @@ interface HudAttributes {
 }
 
 export interface HudListing {
+  caseNum: string
   address: string
-  notes: string
+  city: string | null
+  state: string | null
+  zip: string | null
+  acquired: string | null // YYYY-MM-DD
+  notes: string // pre-built '[HUD REO] Case #... | Acquired ...' tag for saveProperty()
 }
 
-function assembleHudAddress(a: HudAttributes): string {
-  const street = [a.STREET_NUM, a.DIRECTION_PREFIX, a.STREET_NAME].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim()
-  const cityStateZip = [a.CITY, [a.STATE_CODE, a.DISPLAY_ZIP_CODE].filter(Boolean).join(' ')].filter(Boolean).join(', ')
-  return [street, cityStateZip].filter(Boolean).join(', ')
+function assembleStreet(a: HudAttributes): string {
+  return [a.STREET_NUM, a.DIRECTION_PREFIX, a.STREET_NAME].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim()
 }
 
 // Paginates through the FeatureServer (2000/page as of writing; current
@@ -53,12 +62,22 @@ export async function fetchHudReoListings(): Promise<HudListing[]> {
 
     const features: { attributes: HudAttributes }[] = data.features || []
     for (const f of features) {
-      const address = assembleHudAddress(f.attributes)
+      const a = f.attributes
+      const street = assembleStreet(a)
+      const address = [street, [a.CITY, [a.STATE_CODE, a.DISPLAY_ZIP_CODE].filter(Boolean).join(' ')].filter(Boolean).join(', ')]
+        .filter(Boolean).join(', ')
       if (!address) continue
-      const acquired = f.attributes.DATE_ACQUIRED ? new Date(f.attributes.DATE_ACQUIRED).toISOString().slice(0, 10) : null
-      const notes = [`[HUD REO] Case #${f.attributes.CASE_NUM || 'unknown'}`, acquired ? `Acquired ${acquired}` : null]
-        .filter(Boolean).join(' | ')
-      listings.push({ address, notes })
+      const acquired = a.DATE_ACQUIRED ? new Date(a.DATE_ACQUIRED).toISOString().slice(0, 10) : null
+      const caseNum = a.CASE_NUM || 'unknown'
+      listings.push({
+        caseNum,
+        address,
+        city: a.CITY,
+        state: a.STATE_CODE,
+        zip: a.DISPLAY_ZIP_CODE != null ? String(a.DISPLAY_ZIP_CODE) : null,
+        acquired,
+        notes: [`[HUD REO] Case #${caseNum}`, acquired ? `Acquired ${acquired}` : null].filter(Boolean).join(' | '),
+      })
     }
 
     if (!data.exceededTransferLimit || features.length === 0) break
@@ -66,32 +85,4 @@ export async function fetchHudReoListings(): Promise<HudListing[]> {
   }
 
   return listings
-}
-
-export interface HudSyncResult { added: number; skipped: number; total: number }
-
-// Dedupes against existing properties by normalized address (same rule
-// importRows() in CRMContext uses) and bulk-inserts the rest as new leads.
-// Server-side only — needs the service-role client.
-export async function syncHudReo(): Promise<HudSyncResult> {
-  const listings = await fetchHudReoListings()
-  const db = serverSupabase()
-
-  const { data: existing, error: fetchErr } = await db.from('properties').select('address')
-  if (fetchErr) throw new Error(fetchErr.message)
-
-  const existingAddresses = new Set((existing || []).map(p => (p.address || '').toLowerCase().trim()))
-  const toInsert = listings
-    .filter(l => !existingAddresses.has(l.address.toLowerCase().trim()))
-    // A HUD case can appear more than once in a single pull (step changes) — drop dupes within this batch too.
-    .filter((l, i, arr) => arr.findIndex(x => x.address.toLowerCase().trim() === l.address.toLowerCase().trim()) === i)
-    .map(l => ({ address: l.address, notes: l.notes, status: 'lead' as const, followups: [], docs: [] }))
-
-  const CHUNK = 200
-  for (let i = 0; i < toInsert.length; i += CHUNK) {
-    const { error } = await db.from('properties').insert(toInsert.slice(i, i + CHUNK))
-    if (error) throw new Error(error.message)
-  }
-
-  return { added: toInsert.length, skipped: listings.length - toInsert.length, total: listings.length }
 }
