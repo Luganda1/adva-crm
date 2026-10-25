@@ -1,6 +1,6 @@
 'use client'
 import { useState } from 'react'
-import { fmtD, fmt$, todayStr } from '@/lib/utils'
+import { fmtD, fmt$, todayStr, zillowUrl } from '@/lib/utils'
 import { useCRM } from '@/contexts/CRMContext'
 import type { Property, Partner } from '@/types'
 import type { EnrichResult } from '@/app/api/enrich/route'
@@ -62,6 +62,9 @@ export default function PropertyPanel({ property: p, partners, onClose, onEdit, 
       <div className="flex items-center justify-between px-5 py-3.5 sticky top-0 bg-white z-10" style={{ borderBottom: '1px solid var(--border)' }}>
         <h2 className="font-heading font-bold text-sm truncate mr-2">{p.address || '(No address)'}</h2>
         <div className="flex gap-1.5 flex-shrink-0 flex-wrap">
+          {p.address && (
+            <a href={zillowUrl(p.address)} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-sm">🏠 Zillow</a>
+          )}
           <button className="btn btn-outline btn-sm" onClick={onEdit}>Edit</button>
           <button className="btn btn-outline btn-sm" onClick={onSkipTrace}>Skip Trace</button>
           <button className="btn btn-outline btn-sm" onClick={handleEnrich} disabled={enrichLoading}>
