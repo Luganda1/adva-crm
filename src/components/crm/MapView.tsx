@@ -1,9 +1,9 @@
 'use client'
-import Script from 'next/script'
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useCRM } from '@/contexts/CRMContext'
 import { dateInRange, getDateForField, fmtD } from '@/lib/utils'
+import { useGoogleMapsLoaded } from '@/lib/use-google-maps'
 import PropertyPanel from './PropertyPanel'
 import AddPropertyModal from './AddPropertyModal'
 import SkipTraceModal from './SkipTraceModal'
@@ -16,13 +16,6 @@ const STATUS_LABELS: Record<string, string> = {
   lead: 'Lead', active: 'Active', probate: 'Probate', foreclosure: 'Foreclosure', auction: 'Auction',
 }
 const MAPS_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY || ''
-
-// Global callback name for Google Maps
-const CALLBACK = '__gmapReady__'
-
-declare global {
-  interface Window { [key: string]: unknown; google: typeof google }
-}
 
 export default function MapView() {
   const { properties, partners } = useCRM()
@@ -38,7 +31,7 @@ export default function MapView() {
   const myLocMarkerRef = useRef<google.maps.Marker | null>(null)
   const openInfoRef = useRef<google.maps.InfoWindow | null>(null)
 
-  const [mapsLoaded, setMapsLoaded] = useState(false)
+  const mapsLoaded = useGoogleMapsLoaded()
   const [mapInitialized, setMapInitialized] = useState(false)
   const [geocoding, setGeocoding] = useState(false)
   const [pinCount, setPinCount] = useState(0)
@@ -92,14 +85,6 @@ export default function MapView() {
       polylineOptions: { strokeColor: '#E8711A', strokeWeight: 4 },
     })
     setMapInitialized(true)
-  }, [])
-
-  // Set up global callback for Maps script
-  useEffect(() => {
-    window[CALLBACK] = () => {
-      setMapsLoaded(true)
-    }
-    return () => { delete window[CALLBACK] }
   }, [])
 
   // Init map once script loaded
@@ -270,13 +255,6 @@ export default function MapView() {
 
   return (
     <>
-      {MAPS_KEY && (
-        <Script
-          src={`https://maps.googleapis.com/maps/api/js?key=${MAPS_KEY}&libraries=geometry&callback=${CALLBACK}`}
-          strategy="afterInteractive"
-        />
-      )}
-
       <div className="flex gap-2.5 flex-wrap items-start mb-0">
         {/* Left sidebar */}
         <div className="flex flex-col gap-2.5" style={{ width: 256, flexShrink: 0 }}>
