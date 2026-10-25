@@ -103,8 +103,20 @@ ALTER TABLE public.properties ADD COLUMN IF NOT EXISTS baths numeric;
 ALTER TABLE public.properties ADD COLUMN IF NOT EXISTS sqft integer;
 ALTER TABLE public.properties ADD COLUMN IF NOT EXISTS list_price numeric;
 
--- Enable realtime on all tables
-ALTER PUBLICATION supabase_realtime ADD TABLE public.properties;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.partners;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.buyers;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.money_partners;
+-- Enable realtime on all tables.
+-- Postgres has no "ADD TABLE IF NOT EXISTS" for publications, so re-running
+-- this file on a DB that already has them (i.e. every time after the first
+-- setup) throws 42710 "already member of publication" and aborts whatever
+-- else was in the same script. Wrapped so the whole file is safely re-runnable.
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.properties;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.partners;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.buyers;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.money_partners;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
