@@ -15,7 +15,8 @@
 11. [External Integrations](#11-external-integrations)
 12. [Deployment](#12-deployment)
 13. [Infrastructure & Maintenance](#13-infrastructure--maintenance)
-14. [TODO — Planned Features](#14-todo--planned-features)
+14. [Changelog](#14-changelog)
+15. [TODO — Planned Features](#15-todo--planned-features)
 
 ---
 
@@ -39,10 +40,10 @@ The app has two distinct modules:
 | Framework | Next.js 15.3 (App Router) |
 | UI | React 19, Tailwind CSS 3.4 |
 | Language | TypeScript (strict mode) |
-| Database | Supabase (PostgreSQL) with Realtime |
+| Database | Supabase (PostgreSQL). RLS is enabled — see [§7 Application Architecture](#7-application-architecture) for why the browser no longer talks to it directly |
 | Deployment | Vercel |
 | Maps | Google Maps API |
-| External integrations | Realeflow via Zapier webhooks, Google Sheets CSV |
+| External integrations | Realeflow via Zapier webhooks, Google Sheets CSV, Repliers (property search), Zillow (research link) |
 
 ---
 
@@ -63,7 +64,8 @@ adva-crm/
 │   │   ├── partners/page.tsx
 │   │   ├── letters/page.tsx
 │   │   ├── buyers/page.tsx
-│   │   ├── import/page.tsx         # CSV import page (new)
+│   │   ├── import/page.tsx
+│   │   ├── property-search/page.tsx # Address lookup via Repliers → Add to CRM
 │   │   ├── settings/page.tsx
 │   │   ├── money-partners/
 │   │   │   ├── page.tsx
@@ -72,7 +74,7 @@ adva-crm/
 │   │   └── api/
 │   │       ├── health/route.ts           # GET — connection health check
 │   │       ├── properties/
-│   │       │   ├── route.ts              # GET, POST (with Realeflow field mapping)
+│   │       │   ├── route.ts              # GET, POST (Realeflow field mapping; also what the UI calls now)
 │   │       │   └── [id]/route.ts         # PATCH, DELETE
 │   │       ├── leads/route.ts            # GET, POST — dedicated lead intake endpoint
 │   │       ├── partners/
@@ -84,8 +86,12 @@ adva-crm/
 │   │       ├── money-partners/
 │   │       │   ├── route.ts              # GET, POST
 │   │       │   └── [id]/route.ts         # PATCH, DELETE
+│   │       ├── property-search/route.ts  # GET — Repliers address search (see §11)
 │   │       ├── enrich/route.ts           # GET — property enrichment (RentCast/API Ninjas)
-│   │       ├── notify-zap/route.ts       # POST — fires Zapier outbound notification
+│   │       ├── notify-zap/route.ts       # POST — fires Zapier notification; UNUSED by the app now
+│   │       │                             #   (POST /api/properties and /api/leads call notifyZapier()
+│   │       │                             #   server-side directly — kept in case something external
+│   │       │                             #   still hits it, but nothing in this codebase calls it)
 │   │       ├── stats/route.ts            # GET — aggregated lead counts
 │   │       ├── debug-webhook/route.ts    # POST/GET — raw payload inspector (dev tool)
 │   │       └── cron/
@@ -93,13 +99,14 @@ adva-crm/
 │   ├── components/
 │   │   ├── AppShell.tsx
 │   │   ├── crm/
-│   │   │   ├── CRMChrome.tsx        # Navigation shell with Import tab
+│   │   │   ├── CRMChrome.tsx        # Nav shell — Import + 🔍 Search tabs
 │   │   │   ├── LeadsView.tsx
-│   │   │   ├── PropertyCard.tsx
-│   │   │   ├── PropertyPanel.tsx    # Now includes ✦ Enrich button
-│   │   │   ├── AddPropertyModal.tsx
+│   │   │   ├── PropertyCard.tsx     # Photo/price/bd·ba·sqft block when present; owner name removed
+│   │   │   ├── PropertyPanel.tsx    # Same listing block + floating Zillow badge; ✦ Enrich button
+│   │   │   ├── AddPropertyModal.tsx # Includes manual listing-detail fields (photo/price/beds/baths/sqft)
 │   │   │   ├── SkipTraceModal.tsx
-│   │   │   ├── ImportView.tsx       # CSV import UI (new)
+│   │   │   ├── ImportView.tsx       # CSV import UI
+│   │   │   ├── PropertySearchView.tsx # Address search (Repliers) → Add to CRM
 │   │   │   ├── FollowupView.tsx
 │   │   │   ├── EventsView.tsx
 │   │   │   ├── MapView.tsx
@@ -116,14 +123,13 @@ adva-crm/
 │   │   └── ui/
 │   │       └── EmptyState.tsx
 │   ├── contexts/
-│   │   ├── CRMContext.tsx           # importRows now uses assembleAddress()
-│   │   └── MPContext.tsx
+│   │   ├── CRMContext.tsx           # All reads/writes via fetch() to /api/* — see §7/§9
+│   │   └── MPContext.tsx            # Same pattern for money_partners
 │   ├── lib/
-│   │   ├── supabase.ts
-│   │   ├── supabase-server.ts
+│   │   ├── supabase-server.ts       # Service-role client — the ONLY Supabase client in the app now
 │   │   ├── api-auth.ts
-│   │   ├── notify-zap.ts            # Shared Zapier notification utility (new)
-│   │   ├── utils.ts                 # detectDelimiter, assembleAddress added
+│   │   ├── notify-zap.ts            # Shared Zapier notification utility
+│   │   ├── utils.ts                 # fmt helpers, CSV import helpers, zillowUrl()
 │   │   └── letters.ts
 │   └── types/
 │       └── index.ts
@@ -147,16 +153,19 @@ adva-crm/
 | `API_SECRET_KEY` | Recommended | Validates `x-api-key` header on all API routes |
 | `CRON_SECRET` | Recommended | Secures the `/api/cron/keep-alive` endpoint |
 | `RENTCAST_API_KEY` | Optional | RentCast property enrichment (50 calls/month free — requires CC) |
+| `REPLIERS_API_KEY` | Optional | Repliers property search (`/property-search`, `/api/property-search`) — see [§11](#11-external-integrations) |
 | `WEBHOOK_SECRET` | Optional | Validates incoming webhook payloads |
 | `ZAP_INBOUND_URL` | Optional | Zapier catch hook URL for outbound CRM notifications |
 
-> **Note on enrichment API:** `RENTCAST_API_KEY` requires a credit card even on the free tier. A replacement using API Ninjas (no CC required, 10K calls/month free) is planned — see [TODO](#14-todo--planned-features).
+> **Note on enrichment API:** `RENTCAST_API_KEY` requires a credit card even on the free tier. A replacement using API Ninjas (no CC required, 10K calls/month free) is planned — see [TODO](#15-todo--planned-features).
+
+> **Note on `API_SECRET_KEY`:** the browser UI now calls these same `/api/*` routes directly (see [§7](#7-application-architecture)) and does **not** send `x-api-key`. If this is set in Vercel, the UI will start getting `401`s from every route except `/api/enrich` and `/api/property-search` (neither checks the key). **Unset locally; production value unconfirmed as of this writing** — check before ever setting it in Vercel.
 
 ---
 
 ## 5. Database Schema
 
-All tables live in the `public` schema on Supabase (PostgreSQL). Real-time subscriptions are enabled on all four tables.
+All tables live in the `public` schema on Supabase (PostgreSQL). Row Level Security is enabled on all four tables — the anon key cannot read or write them; the app never uses the anon key for data access (see [§7](#7-application-architecture)). All four are also added to the `supabase_realtime` publication at the DB level, but nothing in the app currently subscribes to it — the browser polls instead (same reason: RLS blocks Realtime broadcast to the anon role).
 
 ### `partners`
 
@@ -190,6 +199,11 @@ All tables live in the `public` schema on Supabase (PostgreSQL). Real-time subsc
 | `docs` | jsonb | Array of `{ name, size, date }` |
 | `mailing_address` | text | From skip trace or CSV import |
 | `skip_relatives` | text | From skip trace |
+| `image_url` | text | Listing photo — set by Property Search (Repliers) or manual entry |
+| `beds` | integer | |
+| `baths` | numeric | Supports halves (e.g. `2.5`) |
+| `sqft` | integer | |
+| `list_price` | numeric | Drives the bold price line on the card/panel |
 
 ### `buyers`
 
@@ -230,9 +244,11 @@ All tables live in the `public` schema on Supabase (PostgreSQL). Real-time subsc
 
 All routes are under `/api`. CORS is open for all origins via `src/middleware.ts`.
 
+These routes serve two audiences now, not just Zapier: the browser app itself calls them directly for every read and write (`CRMContext`/`MPContext` — see [§7](#7-application-architecture)), since talking to Supabase straight from the browser no longer works under RLS.
+
 ### Authentication
 
-Routes check `x-api-key` header against `API_SECRET_KEY`. If unset, all requests are allowed (dev mode).
+Routes check `x-api-key` header against `API_SECRET_KEY`. If unset, all requests are allowed (dev mode) — **this is the mode the browser UI currently depends on**, since it doesn't send the header (see the note in [§4](#4-environment-variables)). A few routes never check the key at all, key set or not: `GET /api/enrich`, `GET /api/property-search`, `POST /api/notify-zap`, `GET /api/stats`, and `DELETE /api/partners/[id]` (that last one looks like an oversight, not a deliberate choice — every other `partners` route does check).
 
 ```
 x-api-key: adva-zap-2024-xK9mP
@@ -250,12 +266,14 @@ Returns Supabase connection status and which env vars are present. No auth requi
 ### Properties
 
 #### `GET /api/properties`
-All properties, newest first.
+All properties, newest first. Called directly by `CRMContext.loadAll()` — this is how the browser gets its data now.
 
 #### `POST /api/properties`
-Creates a new property. Handles Realeflow field format — assembles `address` from separate `street`, `city`, `state`, `zipCode` fields. Strips unknown columns before inserting. Fires Zapier notification unless `x-source: zapier` header is present.
+Creates a new property. Handles Realeflow field format — assembles `address` from separate `street`, `city`, `state`, `zipCode` fields. Strips unknown columns before inserting (whitelist includes `image_url`, `beds`, `baths`, `sqft`, `list_price` as of the Property Search feature). Fires Zapier notification unless `x-source: zapier` header is present. `followups`/`docs` default to `[]` but respect caller-supplied arrays (needed by `saveNoteAsNew`, which seeds a followup on creation — external/Zapier payloads never send these, so their behavior is unchanged).
 
 **Required:** at least one address field (`address`, `street`, `city`, etc.)
+
+Also called directly by the UI now (`CRMContext.saveProperty` with no `id`) — the server-side Zapier notification above covers UI-created leads too; the context does not separately ping `/api/notify-zap`.
 
 #### `PATCH /api/properties/[id]`
 Partial update.
@@ -303,14 +321,27 @@ Fetches property details from RentCast (or planned API Ninjas replacement). Retu
 
 Returns `503` if no enrichment API key is configured.
 
-> **Current status:** RentCast key is configured locally but not active (requires CC). Pending swap to API Ninjas — see [TODO](#14-todo--planned-features).
+> **Current status:** RentCast key is configured locally but not active (requires CC). Pending swap to API Ninjas — see [TODO](#15-todo--planned-features).
+
+---
+
+### Property Search (Repliers)
+
+#### `GET /api/property-search?q=<address>`
+Free-text address search against Repliers' live listings API, normalized to a flat shape (address, beds, baths, sqft, year built, list price, estimated value, photo). Powers `/property-search`'s search bar and its "Add to CRM" button, which maps the result straight into `image_url`/`beds`/`baths`/`sqft`/`list_price` on create.
+
+Returns `503` if `REPLIERS_API_KEY` is not configured, `422` if `q` is missing/blank.
+
+> **Sample data notice:** as of this writing, the configured Repliers key is a trial/demo key — results include `**** SAMPLE DATA ****` in the listing description. It's a real, working integration; it just isn't pulling live MLS data until the Repliers account is upgraded. No code changes needed when that happens.
+
+Repliers quirk worth knowing if you touch this route: their API returns `sqft`/`yearBuilt` as numeric *strings* while `numBedrooms`/`numBathrooms` are real numbers — the route coerces both with a `toNum()` helper rather than a `typeof === 'number'` check, which would silently drop the string fields.
 
 ---
 
 ### Zapier Notification
 
 #### `POST /api/notify-zap`
-Browser-callable endpoint that fires a POST to `ZAP_INBOUND_URL`. Called by `CRMContext.saveProperty` when a new lead is created from the UI.
+Fires a POST to `ZAP_INBOUND_URL`. **Not called by anything in this codebase anymore** — `POST /api/properties` and `POST /api/leads` both call the shared `notifyZapier()` function server-side directly instead of hitting this route over HTTP. Left in place in case an external caller still depends on it; safe to remove if not.
 
 ---
 
@@ -338,6 +369,12 @@ Daily Supabase ping. Auth: `Authorization: Bearer <CRON_SECRET>`.
 
 ## 7. Application Architecture
 
+### ⚠️ History: the browser used to talk to Supabase directly — don't bring that back
+
+Earlier versions of this app had `CRMContext`/`MPContext` call Supabase's **anon-key** client directly from the browser for every read, write, and Realtime subscription (`lib/supabase.ts`, now deleted). At some point Row Level Security was enabled on all four tables with no policies granting the anon role access. The result: anon `SELECT` silently returned empty arrays (not an error — RLS just filters rows out), anon `INSERT`/`UPDATE`/`DELETE` returned `401`s that the code never checked (`supabase.insert(...)` result was destructured without looking at `.error`), and an anon-subscribed Realtime channel received **zero** `postgres_changes` events. The only thing that ever showed real data was `layout.tsx`'s initial server-render, which uses the service-role key. Every save/delete/follow-up/deal-log button in the app was a silent no-op until this was found and fixed.
+
+**Current architecture avoids this entirely: the browser has no Supabase client at all.** `src/lib/supabase.ts` was deleted. `CRMContext` and `MPContext` do every read and write through `/api/*` routes (service role, server-side, bypasses RLS by design), and poll every 20s instead of subscribing to Realtime (which would hit the same RLS wall). **If you ever find yourself importing `@supabase/supabase-js` directly into a client component, stop — route it through an API route instead.**
+
 ### Data Flow
 
 ```
@@ -350,20 +387,21 @@ Next.js App Router
       │       │  fetches all data via serverSupabase()
       │       ▼
       │   AppShell → CRMProvider + MPProvider
-      │       │  real-time Supabase subscriptions
+      │       │  fetch() to /api/* for every read/write; 20s poll (no Realtime — see above)
       │       ▼
       │   Page Components → Context consumers
       │
       └─ /api/* routes
               │  checkApiKey() → serverSupabase()
               └─ JSON responses
+              (called by BOTH external integrations below AND the browser UI itself)
 
 External lead flow:
   Realeflow (Deal Surge)
       → Zapier trigger (New Property)
       → POST /api/leads
-      → Supabase insert
-      → Real-time push to all open browsers
+      → Supabase insert (service role)
+      → next poll cycle picks it up in any open browser (≤20s)
 ```
 
 ### Rendering
@@ -374,8 +412,9 @@ External lead flow:
 
 | File | Key | Used in |
 |---|---|---|
-| `lib/supabase.ts` | Anon key | Browser (contexts, components) |
-| `lib/supabase-server.ts` | Service role key | API routes, server components |
+| `lib/supabase-server.ts` | Service role key | API routes, `layout.tsx` (server component) — the **only** way anything in this app touches Supabase |
+
+There is deliberately no anon-key client anywhere in the browser bundle.
 
 ---
 
@@ -394,6 +433,7 @@ External lead flow:
 | `/letters` | `LettersView` | Mail merge letter generation |
 | `/buyers` | `BuyersView` | Buyer/investor directory |
 | `/import` | `ImportView` | Bulletproof CSV import with preview + column mapping |
+| `/property-search` | `PropertySearchView` | Search an address via Repliers, Add to CRM |
 | `/settings` | `SettingsView` | Sender info, Google Sheets sync, letter templates |
 
 ### Money Partners Module
@@ -408,6 +448,8 @@ External lead flow:
 
 ## 9. State Management
 
+Both contexts follow the same pattern: every mutation calls the matching `/api/*` route via `fetch()`, then calls `loadAll()` to refresh state from the server — there's no local optimistic-update logic. A shared `jsonOrThrow()` helper in each context throws with the server's actual error message when a request fails, instead of the old behavior of silently resolving as if nothing happened (that silence is exactly what let the RLS breakage in [§7](#7-application-architecture) go unnoticed for a while — don't reintroduce it).
+
 ### CRMContext (`src/contexts/CRMContext.tsx`)
 
 **State:** `properties`, `partners`, `buyers`, `syncStatus`, `syncLabel`, `sender`, `gsUrl`
@@ -416,51 +458,66 @@ External lead flow:
 
 | Method | Description |
 |---|---|
-| `saveProperty(data, id?)` | Create or update — new leads fire `/api/notify-zap` |
-| `deleteProperty(id)` | Delete |
-| `logFollowup(id, date, note, next?)` | Append follow-up entry |
-| `deleteFU(id, idx)` | Remove follow-up |
-| `uploadDocs(id, files)` | Attach document metadata |
-| `deleteDoc(id, idx)` | Remove document |
-| `saveSkipTrace(id, ...)` | Save skip trace results |
-| `savePartner / deletePartner` | Partner CRUD |
-| `saveBuyer / deleteBuyer` | Buyer CRUD |
-| `importRows(headers, rows)` | Bulk CSV import using `assembleAddress()` |
+| `saveProperty(data, id?)` | `POST`/`PATCH /api/properties` — create or update. Server-side Zapier notification happens inside that route on create; the context does not separately call `/api/notify-zap`. Throws on failure. |
+| `deleteProperty(id)` | `DELETE /api/properties/[id]` |
+| `logFollowup(id, date, note, next?)` | Reads current `followups` from local state, appends, `PATCH`es the full array |
+| `deleteFU(id, idx)` | Same read-modify-write pattern, splices instead of appends |
+| `uploadDocs(id, files)` | Metadata only (`name`/`size`/`date`) — no actual file upload/storage |
+| `deleteDoc(id, idx)` | |
+| `saveSkipTrace(id, ...)` | |
+| `savePartner / deletePartner` | Partner CRUD via `/api/partners[/id]` |
+| `saveBuyer / deleteBuyer` | Buyer CRUD via `/api/buyers[/id]` |
+| `importRows(headers, rows)` | Bulk CSV import using `assembleAddress()` — one `/api/properties` request per row (not batched) |
 | `syncSheet()` | Fetch Google Sheets CSV and import |
 | `generateLetter / printLetterFn` | Letter generation and print |
 
-**Realtime:** Subscribes to Postgres changes on `properties`, `partners`, `buyers`.
+**Sync:** polls `GET /api/properties` + `/api/partners` + `/api/buyers` every 20s (`POLL_MS` in the file), plus immediately after every mutation. No Realtime — see [§7](#7-application-architecture) for why.
 
 ### MPContext (`src/contexts/MPContext.tsx`)
 
 **State:** `partners` (MoneyPartner[]), sync status
 
-**Key mutations:** `savePartner`, `deletePartner`, `logDeal`, `deleteDeal`, `logComm`, `deleteComm`
+**Key mutations:** `savePartner`, `deletePartner`, `logDeal`, `deleteDeal`, `logComm`, `deleteComm` — all via `/api/money-partners[/id]`, same read-modify-write-then-PATCH pattern for the `deals`/`comm_log` jsonb arrays. Same 20s polling, no Realtime.
 
 ---
 
 ## 10. Key Components
 
-### `ImportView.tsx` (new)
+### `PropertySearchView.tsx`
+
+`/property-search`'s page component — search bar, result cards, "Add to CRM" per result.
+1. `GET /api/property-search?q=<address>` (debounced only by the Search button / Enter key, not live-as-you-type)
+2. Results render as cards: photo, propertyType/status badges, bd/ba/sqft, list price, estimated value
+3. **Add to CRM** → `saveProperty()` with `address`, `notes` (`MLS# ... | beds, baths, sqft, built, list, est. value`), `status: 'lead'`, and the structured `image_url`/`list_price`/`beds`/`baths`/`sqft` fields
+4. Treats a falsy/missing id back from `saveProperty` as a failed save (not a success) and shows an inline error — this is the defensive check that exists specifically because of the RLS incident in [§7](#7-application-architecture)
+
+### `PropertyCard.tsx` / `PropertyPanel.tsx` — listing details block
+
+Both components compute `hasListingData = !!(image_url || list_price != null || beds/baths/sqft present)`. When true: photo (or a neutral placeholder if no `image_url`) → bold price → `4 bd · 3 ba · 2,000 sqft` stats line, above the address. When false (most leads that didn't come through Property Search or manual entry): renders exactly as it did before this existed — no empty placeholder photos cluttering a card that's just a phone-and-notes lead.
+
+Owner name was removed from the compact card (`PropertyCard`) — phone moved into the small icon meta row at the bottom instead. `PropertyPanel`'s existing "Owner Contact" section is unchanged.
+
+**Zillow badge** (`PropertyPanel` only): oval pill, Zillow's brand blue (`#006AFF`, `.zillow-badge` / `.zillow-badge-float` in `globals.css`), floats over the bottom-right corner of the photo when one exists, otherwise sits inline in its own row. Links via `zillowUrl(address)` from `lib/utils.ts` — `zillow.com/homes/<address>_rb/`, a long-standing but *unofficial* Zillow search URL pattern (no public Zillow API exists for this). Unusual address formatting (unit numbers, abbreviations) can land on a results list instead of the exact property.
+
+### `ImportView.tsx`
 
 Three-stage CSV import flow:
 1. **Upload** — drag & drop, accepts `.csv`, `.tsv`, `.txt`
 2. **Preview** — shows first 5 rows, editable column mapping dropdowns, assembled address preview
 3. **Done** — added / updated / skipped counts, link to leads
 
-Supports county export formats: comma, tab, semicolon, pipe delimited. Recognizes county-specific headers: `situs`, `grantor`, `taxpayer`, `lis pendens`, `trustee sale`, `case filed`.
+Supports county export formats: comma, tab, semicolon, pipe delimited. Recognizes county-specific headers: `situs`, `grantor`, `taxpayer`, `lis pendens`, `trustee sale`, `case filed`. Column matching (`detectColMap` in `lib/utils.ts`) uses word-boundary regex, not raw substring `.includes()` — a bare `.includes()` check against the short `'st'` synonym for the `state` field used to match inside `street` or `last name` and steal the column before the real `State` header was ever checked.
 
-### `PropertyPanel.tsx` (updated)
+### `PropertyPanel.tsx` — ✦ Enrich button
 
-Added **✦ Enrich** button:
 - Calls `GET /api/enrich?address=<address>`
 - Shows blue card: owner name, estimated value, equity, beds/baths/sqft, year built, last sale, estimated rent
-- **Save to property** fills `owner_name` (if empty) and appends `[Property Data]` block to notes
+- **Save to property** fills `owner_name` (if empty) and appends `[Property Data]` block to notes — note this is a *different* data path from the Property Search listing-details block above (this one only ever writes to `notes`, never to the structured `beds`/`baths`/`sqft`/`list_price` columns)
 - Gracefully shows error if enrichment API key not configured
 
-### `CRMChrome.tsx` (updated)
+### `CRMChrome.tsx`
 
-Added `⬆️ Import` tab to navigation bar.
+Nav tabs: All Leads, Follow-up, Events, Map, Geo, Partners, Letters, Buyers, Import, **🔍 Search**, Settings.
 
 ### `LeadsView.tsx`
 
@@ -528,6 +585,14 @@ Configure a published Google Sheets CSV URL in `/settings`. The CRM fetches it a
 
 `GET /api/enrich?address=` calls RentCast's `/properties` and `/avm/value` endpoints in parallel. Requires `RENTCAST_API_KEY`. Currently inactive — planned replacement with API Ninjas (see TODO).
 
+### Property Search (Repliers)
+
+`GET /api/property-search?address=` calls `GET https://api.repliers.io/listings?search=<q>&fields=...` with a `REPLIERS-API-KEY` header. Base URL and auth header aren't documented anywhere obvious on their docs site (confirmed by hitting the API directly) — `https://api.repliers.io`, header name `REPLIERS-API-KEY`. No sandbox/demo key exists; your own key is provisioned when the account is created. See [§6](#6-api-reference) for the sample-data caveat and the string-vs-number field quirk. Listing photos are served from `https://cdn.repliers.io/<path>` — the `images[]` array in their response gives relative paths, prefix with that CDN host.
+
+### Zillow (research link)
+
+No public API. `zillowUrl()` in `lib/utils.ts` builds `https://www.zillow.com/homes/<encoded address>_rb/` — Zillow's own site-search URL pattern, used unofficially (not guaranteed stable, no SLA). Curl-testing this pattern returns a `403` due to Zillow's bot detection blocking non-browser requests — that's expected and doesn't indicate the link is broken for a real person clicking it in an actual browser. Redfin and Realtor.com were considered and rejected for the same treatment: neither has an address-to-listing URL pattern that doesn't require hitting a non-public internal API first.
+
 ---
 
 ## 12. Deployment
@@ -546,7 +611,9 @@ npm run dev
 # runs at http://localhost:3000
 ```
 
-**Database setup:** Run `supabase/schema.sql` once in Supabase → SQL Editor.
+**Database setup:** Run `supabase/schema.sql` once in Supabase → SQL Editor. The whole file is safe to re-run on an existing database (every statement is idempotent) — see [§13](#13-infrastructure--maintenance) for the gotcha that made this not true until recently.
+
+**PR preview deployments:** Vercel auto-builds a preview for every PR/branch pushed to GitHub, but on this Vercel team they're behind Vercel's SSO/authentication protection — a tool or CI process without a logged-in Vercel session gets redirected to `vercel.com/sso-api` rather than the app (`302`, not a real response). Only verifiable by someone logged into the Vercel account opening the Preview link directly.
 
 ---
 
@@ -571,15 +638,25 @@ Runs daily at 12:00 UTC. Secured with `CRON_SECRET`. Monitor at: **Vercel Dashbo
 curl https://adva-crm-two.vercel.app/api/health
 ```
 
+### Adding a New Column
+
+1. Add it to the relevant `CREATE TABLE` in `supabase/schema.sql` (for fresh installs) **and** as an `ALTER TABLE ... ADD COLUMN IF NOT EXISTS ...` in the migration block further down (for existing deployments — `CREATE TABLE IF NOT EXISTS` does nothing to a table that already exists)
+2. Run just that `ALTER TABLE` statement in Supabase → SQL Editor (or the whole file — see the idempotency note below)
+3. Add it to the TypeScript interface in `src/types/index.ts`
+4. If it should be insertable via `POST /api/<resource>`, add it to that route's whitelist (`/api/leads` and `/api/properties` both build an explicit `row = {...}` object — unlisted fields are silently dropped, not errored)
+5. `PATCH /api/<resource>/[id]` is generic (`.update(await req.json())`) on every resource — no whitelist to update there
+
+> **Idempotency gotcha (bit us once):** Supabase's SQL editor runs a multi-statement paste as one transaction. `ALTER PUBLICATION ... ADD TABLE` has no `IF NOT EXISTS` in Postgres, so re-running `schema.sql` on a DB that already has its tables publicized (i.e. every time after first setup) throws `42710 duplicate_object` on those lines — and rolls back everything earlier in the same paste, including new column additions that would otherwise have succeeded. Fixed by wrapping each `ALTER PUBLICATION` in a `DO $$ BEGIN ... EXCEPTION WHEN duplicate_object THEN NULL; END $$;` block. Keep that pattern for anything else in this file that isn't naturally idempotent.
+
 ### Adding a New Table
 
 1. Write `CREATE TABLE` SQL in `supabase/schema.sql`
 2. Run in Supabase → SQL Editor
-3. Enable realtime: `ALTER PUBLICATION supabase_realtime ADD TABLE public.<name>;`
+3. Enable realtime at the DB level: `ALTER PUBLICATION supabase_realtime ADD TABLE public.<name>;` (wrapped in the `DO`/`EXCEPTION` pattern above) — note the app doesn't currently consume Realtime (see [§7](#7-application-architecture)), so this is optional unless/until that changes
 4. Add TypeScript interface to `src/types/index.ts`
-5. Add API routes under `src/app/api/<resource>/`
-6. Add fetch logic to relevant context
-7. Update `layout.tsx` to fetch initial data server-side
+5. Add API routes under `src/app/api/<resource>/` (`GET`/`POST` in `route.ts`, `PATCH`/`DELETE` in `[id]/route.ts`, `checkApiKey()` first in each — see [§6](#6-api-reference))
+6. Add fetch-based read/write methods to the relevant context (`CRMContext`/`MPContext`) calling those routes — **not** a direct Supabase client call (see [§7](#7-application-architecture) for why)
+7. Update `layout.tsx` to fetch initial data server-side via `serverSupabase()`
 
 ### Branch Workflow
 
@@ -594,7 +671,22 @@ git push origin main
 
 ---
 
-## 14. TODO — Planned Features
+## 14. Changelog
+
+Notable shipped work, newest first. Not every commit — just things worth a future reader knowing happened.
+
+### 2026-10-25 — Property Search (Repliers), MLS listing details, Zillow badge, critical RLS fix
+
+- **Property Search** (`/property-search`, `GET /api/property-search`): address search via Repliers → "Add to CRM". Chose a direct REST integration over MCP — MCP is for an LLM deciding which tool to call mid-conversation, not the right layer for a deterministic search-bar feature.
+- **MLS listing details on card/panel**: new `image_url`/`beds`/`baths`/`sqft`/`list_price` columns, populated by Property Search or manual entry. Card/panel degrade gracefully when absent (most existing leads).
+- **Zillow research badge**: floating oval badge on `PropertyPanel`, Zillow's brand blue, links to `zillow.com/homes/<address>_rb/`.
+- **Critical fix — RLS silently broke all CRM reads/writes/Realtime**: see [§7](#7-application-architecture) for the full writeup. Found while verifying the Property Search "Add to CRM" button; turned out to affect the entire app, not just the new feature. Fixed by moving `CRMContext`/`MPContext` off the anon Supabase client entirely, onto the existing `/api/*` routes (service role), with 20s polling replacing the dead Realtime subscription.
+- **`schema.sql` idempotency fix**: see [§13](#13-infrastructure--maintenance) — the file wasn't safely re-runnable; it is now.
+- **CSV import column-mapping fix**: `detectColMap`'s `'st'` synonym for `state` was substring-matching inside `street`/`last name` via raw `.includes()`, stealing the column before the real `State` header was checked. Switched to word-boundary regex matching.
+
+---
+
+## 15. TODO — Planned Features
 
 Features discussed and planned but not yet built, in priority order:
 
@@ -714,4 +806,4 @@ Features discussed and planned but not yet built, in priority order:
 
 ---
 
-*Last updated: 2026-07-23*
+*Last updated: 2026-10-25*
