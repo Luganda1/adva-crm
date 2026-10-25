@@ -1,7 +1,5 @@
 'use client'
-import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react'
-import { supabase } from '@/lib/supabase'
-import { todayStr } from '@/lib/utils'
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import type { MoneyPartner, Deal, CommEntry } from '@/types'
 
 interface Ctx {
@@ -18,59 +16,83 @@ interface Ctx {
 const MPContext = createContext<Ctx | null>(null)
 export const useMP = () => { const c = useContext(MPContext); if (!c) throw new Error('useMP outside provider'); return c }
 
+// Same reasoning as CRMContext: anon-key RLS blocks reads/writes/Realtime on
+// money_partners, so all access goes through /api/money-partners (service role).
+const POLL_MS = 20_000
+
+async function jsonOrThrow(res: Response) {
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.error || `Request failed (${res.status})`)
+  }
+  return res.status === 204 ? null : res.json()
+}
+
 export function MPProvider({ children, initialPartners = [] }: { children: React.ReactNode; initialPartners?: MoneyPartner[] }) {
   const [partners, setPartners] = useState<MoneyPartner[]>(initialPartners)
   const [syncStatus, setSyncStatus] = useState<'on' | 'syncing' | 'error'>(initialPartners.length ? 'on' : 'syncing')
-  const [syncLabel, setSyncLabel] = useState(initialPartners.length ? 'Live sync on' : 'Connecting...')
+  const [syncLabel, setSyncLabel] = useState(initialPartners.length ? 'Synced' : 'Connecting...')
+  const partnersRef = useRef(partners)
+  partnersRef.current = partners
 
   const loadAll = useCallback(async () => {
-    setSyncStatus('syncing'); setSyncLabel('Loading...')
-    const { data } = await supabase.from('money_partners').select('*').order('created_at', { ascending: false })
-    setPartners((data as MoneyPartner[]) || [])
-    setSyncStatus('on'); setSyncLabel('Live sync on')
+    setSyncStatus('syncing'); setSyncLabel('Syncing...')
+    try {
+      const data = await jsonOrThrow(await fetch('/api/money-partners'))
+      setPartners(Array.isArray(data) ? data : [])
+      setSyncStatus('on'); setSyncLabel('Synced')
+    } catch {
+      setSyncStatus('error'); setSyncLabel('Sync error')
+    }
   }, [])
 
   useEffect(() => {
     if (!initialPartners.length) loadAll()
-    const ch = supabase.channel('mp')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'money_partners' }, loadAll)
-      .subscribe()
-    return () => { supabase.removeChannel(ch) }
+    const interval = setInterval(loadAll, POLL_MS)
+    return () => clearInterval(interval)
   }, [loadAll, initialPartners.length])
 
   const savePartner = useCallback(async (data: Partial<MoneyPartner>, id?: string | null) => {
-    if (id) await supabase.from('money_partners').update(data).eq('id', id)
-    else await supabase.from('money_partners').insert({ ...data, deals: [], comm_log: [] })
+    if (id) {
+      await jsonOrThrow(await fetch(`/api/money-partners/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }))
+    } else {
+      await jsonOrThrow(await fetch('/api/money-partners', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }))
+    }
     await loadAll()
   }, [loadAll])
 
   const deletePartner = useCallback(async (id: string) => {
-    await supabase.from('money_partners').delete().eq('id', id); await loadAll()
+    await jsonOrThrow(await fetch(`/api/money-partners/${id}`, { method: 'DELETE' }))
+    await loadAll()
+  }, [loadAll])
+
+  const patchPartner = useCallback(async (id: string, patch: Partial<MoneyPartner>) => {
+    await jsonOrThrow(await fetch(`/api/money-partners/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) }))
+    await loadAll()
   }, [loadAll])
 
   const logDeal = useCallback(async (id: string, deal: Deal) => {
-    const p = partners.find(x => x.id === id); if (!p) return
-    await supabase.from('money_partners').update({ deals: [...(p.deals || []), deal] }).eq('id', id)
-    await loadAll()
-  }, [partners, loadAll])
+    const p = partnersRef.current.find(x => x.id === id); if (!p) return
+    await patchPartner(id, { deals: [...(p.deals || []), deal] })
+  }, [patchPartner])
 
   const deleteDeal = useCallback(async (id: string, idx: number) => {
-    const p = partners.find(x => x.id === id); if (!p) return
+    const p = partnersRef.current.find(x => x.id === id); if (!p) return
     const deals = [...(p.deals || [])]; deals.splice(idx, 1)
-    await supabase.from('money_partners').update({ deals }).eq('id', id); await loadAll()
-  }, [partners, loadAll])
+    await patchPartner(id, { deals })
+  }, [patchPartner])
 
   const logComm = useCallback(async (id: string, date: string, note: string, next: string) => {
-    const p = partners.find(x => x.id === id); if (!p) return
+    const p = partnersRef.current.find(x => x.id === id); if (!p) return
     const comm_log: CommEntry[] = [...(p.comm_log || []), { date, note, next_followup: next || null }]
-    await supabase.from('money_partners').update({ comm_log }).eq('id', id); await loadAll()
-  }, [partners, loadAll])
+    await patchPartner(id, { comm_log })
+  }, [patchPartner])
 
   const deleteComm = useCallback(async (id: string, idx: number) => {
-    const p = partners.find(x => x.id === id); if (!p) return
+    const p = partnersRef.current.find(x => x.id === id); if (!p) return
     const comm_log = [...(p.comm_log || [])]; comm_log.splice(idx, 1)
-    await supabase.from('money_partners').update({ comm_log }).eq('id', id); await loadAll()
-  }, [partners, loadAll])
+    await patchPartner(id, { comm_log })
+  }, [patchPartner])
 
   const value = useMemo<Ctx>(() => ({
     partners, syncStatus, syncLabel, loadAll, savePartner, deletePartner,

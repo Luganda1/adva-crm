@@ -1,6 +1,5 @@
 'use client'
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { supabase } from '@/lib/supabase'
 import { loadSender, saveSender, buildDefaultTemplates, getCustomTemplates, saveCustomTemplate, deleteCustomTemplate, generateLetterBody, printLetter } from '@/lib/letters'
 import { todayStr, parseCSV, detectColMap, assembleAddress, parseImportDate } from '@/lib/utils'
 import type { Property, Partner, Buyer, SenderInfo, FollowUp, Doc, LetterType } from '@/types'
@@ -39,6 +38,21 @@ export const useCRM = () => { const c = useContext(CRMContext); if (!c) throw ne
 
 const PRESET_SHEET = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQb4VU8fJvvdGzbq5B8KJpkqqHHP9_EIV356IH1v-aVt35ztYrcDLScj3f0fa6_j-l9eG4aXXsF7OSs/pub?output=csv'
 
+// All data access for the CRM runs through our own /api/* routes (service-role
+// key, server-side) instead of the browser's anon Supabase client. The anon key
+// is subject to RLS, which blocks reads, writes, AND Realtime broadcast on these
+// tables — going direct from the browser silently did nothing. These routes
+// already existed for the Zapier/Realeflow integration; the UI just reuses them.
+const POLL_MS = 20_000 // Realtime push isn't available under RLS — poll instead.
+
+async function jsonOrThrow(res: Response) {
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.error || `Request failed (${res.status})`)
+  }
+  return res.status === 204 ? null : res.json()
+}
+
 export function CRMProvider({ children, initialProperties = [], initialPartners = [], initialBuyers = [] }: {
   children: React.ReactNode; initialProperties?: Property[]; initialPartners?: Partner[]; initialBuyers?: Buyer[]
 }) {
@@ -46,115 +60,135 @@ export function CRMProvider({ children, initialProperties = [], initialPartners 
   const [partners, setPartners] = useState<Partner[]>(initialPartners)
   const [buyers, setBuyers] = useState<Buyer[]>(initialBuyers)
   const [syncStatus, setSyncStatus] = useState<'connected' | 'syncing' | 'error'>(initialProperties.length ? 'connected' : 'syncing')
-  const [syncLabel, setSyncLabel] = useState(initialProperties.length ? 'Live sync on' : 'Connecting...')
+  const [syncLabel, setSyncLabel] = useState(initialProperties.length ? 'Synced' : 'Connecting...')
   const [sender, setSender] = useState<SenderInfo>(loadSender)
   const [gsUrl, setGsUrlState] = useState(() => typeof window !== 'undefined' ? localStorage.getItem('crm_gs_url') || PRESET_SHEET : PRESET_SHEET)
   const senderTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const propertiesRef = useRef(properties)
+  propertiesRef.current = properties
 
   const loadAll = useCallback(async () => {
-    setSyncStatus('syncing'); setSyncLabel('Loading...')
-    const [{ data: p }, { data: pa }, { data: bu }] = await Promise.all([
-      supabase.from('properties').select('*').order('created_at', { ascending: false }),
-      supabase.from('partners').select('*').order('name'),
-      supabase.from('buyers').select('*').order('created_at', { ascending: false }),
-    ])
-    setProperties((p as Property[]) || [])
-    setPartners((pa as Partner[]) || [])
-    setBuyers((bu as Buyer[]) || [])
-    setSyncStatus('connected'); setSyncLabel('Live sync on')
+    setSyncStatus('syncing'); setSyncLabel('Syncing...')
+    try {
+      const [p, pa, bu] = await Promise.all([
+        fetch('/api/properties').then(jsonOrThrow),
+        fetch('/api/partners').then(jsonOrThrow),
+        fetch('/api/buyers').then(jsonOrThrow),
+      ])
+      setProperties(Array.isArray(p) ? p : [])
+      setPartners(Array.isArray(pa) ? pa : [])
+      setBuyers(Array.isArray(bu) ? bu : [])
+      setSyncStatus('connected'); setSyncLabel('Synced')
+    } catch {
+      setSyncStatus('error'); setSyncLabel('Sync error')
+    }
   }, [])
 
   useEffect(() => {
     if (!initialProperties.length) loadAll()
-    const ch = supabase.channel('crm')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'properties' }, loadAll)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'partners' }, loadAll)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'buyers' }, loadAll)
-      .subscribe()
-    return () => { supabase.removeChannel(ch) }
+    const interval = setInterval(loadAll, POLL_MS)
+    return () => clearInterval(interval)
   }, [loadAll, initialProperties.length])
 
   const saveProperty = useCallback(async (data: Partial<Property>, id?: string | null): Promise<string> => {
     setSyncStatus('syncing')
     if (id) {
-      await supabase.from('properties').update(data).eq('id', id)
+      await jsonOrThrow(await fetch(`/api/properties/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data),
+      }))
       await loadAll(); return id
     } else {
-      const { data: row } = await supabase.from('properties').insert({ ...data, followups: [], docs: [] }).select('*').single()
+      // POST /api/properties already fires the Zapier notification server-side
+      // (skipped only for x-source: zapier) — no separate client-side ping needed.
+      const row = await jsonOrThrow(await fetch('/api/properties', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data),
+      }))
       await loadAll()
-      if (row) {
-        fetch('/api/notify-zap', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(row) }).catch(() => {})
-      }
       return row?.id ?? ''
     }
   }, [loadAll])
 
   const deleteProperty = useCallback(async (id: string) => {
-    await supabase.from('properties').delete().eq('id', id); await loadAll()
+    await jsonOrThrow(await fetch(`/api/properties/${id}`, { method: 'DELETE' }))
+    await loadAll()
+  }, [loadAll])
+
+  const patchProperty = useCallback(async (id: string, patch: Partial<Property>) => {
+    await jsonOrThrow(await fetch(`/api/properties/${id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch),
+    }))
+    await loadAll()
   }, [loadAll])
 
   const logFollowup = useCallback(async (id: string, date: string, note: string, next?: string) => {
-    const p = properties.find(x => x.id === id); if (!p) return
+    const p = propertiesRef.current.find(x => x.id === id); if (!p) return
     const fus: FollowUp[] = [...(p.followups || []), { date, note }]
     const u: Partial<Property> = { followups: fus }; if (next) u.next_followup = next
-    await supabase.from('properties').update(u).eq('id', id); await loadAll()
-  }, [properties, loadAll])
+    await patchProperty(id, u)
+  }, [patchProperty])
 
   const deleteFU = useCallback(async (id: string, idx: number) => {
-    const p = properties.find(x => x.id === id); if (!p) return
+    const p = propertiesRef.current.find(x => x.id === id); if (!p) return
     const fus = [...(p.followups || [])]; fus.splice(idx, 1)
-    await supabase.from('properties').update({ followups: fus }).eq('id', id); await loadAll()
-  }, [properties, loadAll])
+    await patchProperty(id, { followups: fus })
+  }, [patchProperty])
 
   const uploadDocs = useCallback(async (id: string, files: FileList) => {
-    const p = properties.find(x => x.id === id); if (!p) return
+    const p = propertiesRef.current.find(x => x.id === id); if (!p) return
     const docs: Doc[] = [...(p.docs || [])]
     Array.from(files).forEach(f => docs.push({ name: f.name, size: (f.size / 1024).toFixed(1) + 'KB', date: todayStr() }))
-    await supabase.from('properties').update({ docs }).eq('id', id); await loadAll()
-  }, [properties, loadAll])
+    await patchProperty(id, { docs })
+  }, [patchProperty])
 
   const deleteDoc = useCallback(async (id: string, idx: number) => {
-    const p = properties.find(x => x.id === id); if (!p) return
+    const p = propertiesRef.current.find(x => x.id === id); if (!p) return
     const docs = [...(p.docs || [])]; docs.splice(idx, 1)
-    await supabase.from('properties').update({ docs }).eq('id', id); await loadAll()
-  }, [properties, loadAll])
+    await patchProperty(id, { docs })
+  }, [patchProperty])
 
   const saveSkipTrace = useCallback(async (id: string, phone: string, email: string, mailing: string, relatives: string, notes: string) => {
-    const p = properties.find(x => x.id === id); if (!p) return
+    const p = propertiesRef.current.find(x => x.id === id); if (!p) return
     const u: Partial<Property> = {}
     if (phone) u.phone = phone; if (email) u.email = email
     if (mailing) u.mailing_address = mailing; if (relatives) u.skip_relatives = relatives
     const parts = ['[Skip Trace]']; if (phone) parts.push('Phone: ' + phone); if (email) parts.push('Email: ' + email)
     if (mailing) parts.push('Mailing: ' + mailing); if (relatives) parts.push('Relatives: ' + relatives); if (notes) parts.push(notes)
     u.followups = [...(p.followups || []), { date: todayStr(), note: parts.join(' | ') }]
-    await supabase.from('properties').update(u).eq('id', id); await loadAll()
-  }, [properties, loadAll])
+    await patchProperty(id, u)
+  }, [patchProperty])
 
   const savePartner = useCallback(async (name: string, phone: string, email: string, role: string) => {
-    await supabase.from('partners').insert({ name, phone: phone || null, email: email || null, role: role || null })
+    await jsonOrThrow(await fetch('/api/partners', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, phone: phone || null, email: email || null, role: role || null }),
+    }))
     await loadAll()
   }, [loadAll])
 
   const deletePartner = useCallback(async (id: string) => {
-    await supabase.from('partners').delete().eq('id', id)
-    await supabase.from('properties').update({ partner_id: null }).eq('partner_id', id)
+    await jsonOrThrow(await fetch(`/api/partners/${id}`, { method: 'DELETE' }))
     await loadAll()
   }, [loadAll])
 
   const saveBuyer = useCallback(async (data: Partial<Buyer>, id?: string | null) => {
-    if (id) await supabase.from('buyers').update(data).eq('id', id)
-    else await supabase.from('buyers').insert(data)
+    if (id) {
+      await jsonOrThrow(await fetch(`/api/buyers/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }))
+    } else {
+      await jsonOrThrow(await fetch('/api/buyers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }))
+    }
     await loadAll()
   }, [loadAll])
 
   const deleteBuyer = useCallback(async (id: string) => {
-    await supabase.from('buyers').delete().eq('id', id); await loadAll()
+    await jsonOrThrow(await fetch(`/api/buyers/${id}`, { method: 'DELETE' }))
+    await loadAll()
   }, [loadAll])
 
   const importRows = useCallback(async (headers: string[], rows: string[][]): Promise<{ added: number; updated: number; skipped: number }> => {
     const colMap = detectColMap(headers)
     let added = 0, updated = 0, skipped = 0
     const get = (row: string[], f: string) => colMap[f] !== undefined ? (row[colMap[f]] || '').trim() : ''
+    const current = propertiesRef.current
     for (const row of rows) {
       const address = assembleAddress(row, colMap)
       if (!address) { skipped++; continue }
@@ -170,7 +204,7 @@ export function CRMProvider({ children, initialProperties = [], initialPartners 
         auction_date: parseImportDate(get(row, 'auction_date')),
         mailing_address: get(row, 'mailing_address') || null,
       }
-      const existing = properties.find(p => p.address?.toLowerCase().trim() === address.toLowerCase().trim())
+      const existing = current.find(p => p.address?.toLowerCase().trim() === address.toLowerCase().trim())
       if (existing) {
         const u: Partial<Property> = {}
         if (data.owner_name && !existing.owner_name) u.owner_name = data.owner_name
@@ -181,14 +215,17 @@ export function CRMProvider({ children, initialProperties = [], initialPartners 
         if (data.foreclosure_date && !existing.foreclosure_date) u.foreclosure_date = data.foreclosure_date
         if (data.auction_date && !existing.auction_date) u.auction_date = data.auction_date
         if (data.mailing_address && !existing.mailing_address) u.mailing_address = data.mailing_address
-        if (Object.keys(u).length) { await supabase.from('properties').update(u).eq('id', existing.id); updated++ }
-        else skipped++
+        if (Object.keys(u).length) {
+          await jsonOrThrow(await fetch(`/api/properties/${existing.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(u) }))
+          updated++
+        } else skipped++
       } else {
-        await supabase.from('properties').insert({ ...data, followups: [], docs: [] }); added++
+        await jsonOrThrow(await fetch('/api/properties', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }))
+        added++
       }
     }
     await loadAll(); return { added, updated, skipped }
-  }, [properties, loadAll])
+  }, [loadAll])
 
   const updateSender = useCallback((field: keyof SenderInfo, value: string) => {
     const next = { ...sender, [field]: value }; setSender(next)
@@ -250,16 +287,20 @@ export function CRMProvider({ children, initialProperties = [], initialPartners 
   }, [properties])
 
   const saveNoteToProperty = useCallback(async (id: string, text: string) => {
-    const p = properties.find(x => x.id === id); if (!p) return
+    const p = propertiesRef.current.find(x => x.id === id); if (!p) return
     const fus: FollowUp[] = [...(p.followups || []), { date: todayStr(), note: '[Imported] ' + text.trim() }]
-    await supabase.from('properties').update({ followups: fus }).eq('id', id); await loadAll()
-  }, [properties, loadAll])
+    await patchProperty(id, { followups: fus })
+  }, [patchProperty])
 
   const saveNoteAsNew = useCallback(async (text: string) => {
-    await supabase.from('properties').insert({
-      address: '(From import — update address)', notes: text.trim(), status: 'lead',
-      followups: [{ date: todayStr(), note: '[Imported] ' + text.trim() }], docs: [],
-    }); await loadAll()
+    await jsonOrThrow(await fetch('/api/properties', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        address: '(From import — update address)', notes: text.trim(), status: 'lead',
+        followups: [{ date: todayStr(), note: '[Imported] ' + text.trim() }],
+      }),
+    }))
+    await loadAll()
   }, [loadAll])
 
   const value = useMemo<Ctx>(() => ({
