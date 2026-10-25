@@ -60,8 +60,10 @@ export async function POST(req: NextRequest) {
     partner_id: (body.partner_id || null) as string | null,
     mailing_address: (body.mailing_address || null) as string | null,
     skip_relatives: (body.skip_relatives || null) as string | null,
-    followups: [],
-    docs: [],
+    // Honor caller-supplied followups/docs (e.g. the UI seeding a note on create)
+    // instead of always forcing them empty — external payloads never send these.
+    followups: Array.isArray(body.followups) ? body.followups : [],
+    docs: Array.isArray(body.docs) ? body.docs : [],
   }
 
   const db = serverSupabase()
