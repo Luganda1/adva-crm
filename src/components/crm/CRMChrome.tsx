@@ -9,7 +9,8 @@ const TABS = [
   { href: '/events', label: 'Events' }, { href: '/map', label: '🗺 Map' },
   { href: '/geo', label: '📍 Geo' }, { href: '/partners', label: 'Partners' },
   { href: '/letters', label: '✉️ Letters' }, { href: '/buyers', label: '🏦 Buyers' },
-  { href: '/import', label: '⬆️ Import' }, { href: '/settings', label: '⚙️ Settings' },
+  { href: '/import', label: '⬆️ Import' }, { href: '/property-search', label: '🔍 Search' },
+  { href: '/settings', label: '⚙️ Settings' },
 ]
 
 export default function CRMChrome({ children }: { children: React.ReactNode }) {
