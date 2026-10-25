@@ -98,10 +98,17 @@ export function detectColMap(headers: string[]): Record<string, number> {
     auction_date:     ['auction date','auction','sheriff sale','trustee sale'],
     mailing_address:  ['mailing address','mail address','mailing'],
   }
+  // Word-boundary match so short tokens like "st" (state) don't match inside
+  // longer words like "street" or "last" — \b only breaks between a word
+  // char and a non-word char, so "st" won't match the "st" inside "street".
+  const matches = (header: string, variant: string): boolean => {
+    const escaped = variant.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    return new RegExp(`\\b${escaped}\\b`).test(header)
+  }
   headers.forEach((h, i) => {
     const hl = h.toLowerCase().trim()
     for (const [field, variants] of Object.entries(patterns)) {
-      if (map[field] === undefined && variants.some(v => hl.includes(v))) map[field] = i
+      if (map[field] === undefined && variants.some(v => matches(hl, v))) map[field] = i
     }
   })
   return map
