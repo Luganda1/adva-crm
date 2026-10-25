@@ -16,6 +16,13 @@ body { font-family: 'Open Sans', sans-serif; background: #F7F7F7; color: var(--c
 
 @layer components {
   .badge { @apply text-xs font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wide font-heading; }
+  .zillow-badge {
+    @apply inline-flex items-center gap-1 text-xs font-bold px-3.5 py-1.5 rounded-full font-heading no-underline transition-transform;
+    background: #006AFF; color: white; letter-spacing: .2px;
+    box-shadow: 0 4px 14px rgba(0,106,255,.45), 0 1px 3px rgba(0,0,0,.15);
+  }
+  .zillow-badge:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,106,255,.55), 0 2px 4px rgba(0,0,0,.18); }
+  .zillow-badge-float { @apply absolute; bottom: 10px; right: 10px; }
   .badge-lead { background: var(--gray-light); color: var(--gray); }
   .badge-active { background: var(--green-light); color: var(--green); }
   .badge-probate { background: var(--amber-light); color: var(--amber); }

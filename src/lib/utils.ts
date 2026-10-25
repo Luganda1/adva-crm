@@ -2,6 +2,16 @@ import type { Property } from '@/types'
 
 export const todayStr = () => new Date().toISOString().slice(0, 10)
 
+// Zillow has no public address-lookup API, but its own site search accepts a
+// free-text query in this path form and resolves to the matching listing
+// (an unofficial but long-standing, widely-used pattern — not guaranteed by
+// Zillow, but stable in practice). Unusual formatting (unit numbers, odd
+// abbreviations) can land on a results list instead of the exact property
+// rather than erroring, since it's a search, not an exact-ID lookup.
+export function zillowUrl(address: string): string {
+  return `https://www.zillow.com/homes/${encodeURIComponent(address)}_rb/`
+}
+
 export function fmtD(d: string | null | undefined): string {
   if (!d) return ''
   const [y, m, day] = d.split('-')

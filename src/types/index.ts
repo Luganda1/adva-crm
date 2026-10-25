@@ -9,6 +9,8 @@ export interface Property {
   next_followup: string | null; partner_id: string | null
   followups: FollowUp[]; docs: Doc[]
   mailing_address: string | null; skip_relatives: string | null
+  image_url: string | null; beds: number | null; baths: number | null
+  sqft: number | null; list_price: number | null
 }
 
 export interface Partner {

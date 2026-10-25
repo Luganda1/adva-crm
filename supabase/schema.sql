@@ -31,7 +31,12 @@ CREATE TABLE IF NOT EXISTS public.properties (
   followups jsonb DEFAULT '[]',
   docs jsonb DEFAULT '[]',
   mailing_address text,
-  skip_relatives text
+  skip_relatives text,
+  image_url text,
+  beds integer,
+  baths numeric,
+  sqft integer,
+  list_price numeric
 );
 
 -- Buyers
@@ -86,8 +91,32 @@ CREATE TABLE IF NOT EXISTS public.money_partners (
   comm_log jsonb DEFAULT '[]'
 );
 
--- Enable realtime on all tables
-ALTER PUBLICATION supabase_realtime ADD TABLE public.properties;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.partners;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.buyers;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.money_partners;
+-- ============================================================
+-- Migration — MLS-style listing details on properties
+-- (image, beds, baths, sqft, list price) for the property card/panel.
+-- Safe to re-run: CREATE TABLE above is IF NOT EXISTS, so an existing
+-- table needs these added explicitly.
+-- ============================================================
+ALTER TABLE public.properties ADD COLUMN IF NOT EXISTS image_url text;
+ALTER TABLE public.properties ADD COLUMN IF NOT EXISTS beds integer;
+ALTER TABLE public.properties ADD COLUMN IF NOT EXISTS baths numeric;
+ALTER TABLE public.properties ADD COLUMN IF NOT EXISTS sqft integer;
+ALTER TABLE public.properties ADD COLUMN IF NOT EXISTS list_price numeric;
+
+-- Enable realtime on all tables.
+-- Postgres has no "ADD TABLE IF NOT EXISTS" for publications, so re-running
+-- this file on a DB that already has them (i.e. every time after the first
+-- setup) throws 42710 "already member of publication" and aborts whatever
+-- else was in the same script. Wrapped so the whole file is safely re-runnable.
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.properties;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.partners;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.buyers;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.money_partners;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;

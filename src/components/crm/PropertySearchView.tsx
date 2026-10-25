@@ -40,11 +40,14 @@ export default function PropertySearchView() {
       r.sqft != null ? `${r.sqft.toLocaleString()} sqft` : null, r.yearBuilt ? `built ${r.yearBuilt}` : null,
       r.listPrice != null ? `list ${fmt$(r.listPrice)}` : null, r.estimatedValue != null ? `est. value ${fmt$(r.estimatedValue)}` : null,
     ].filter(Boolean).join(', ')
-    const notes = [`[Property Search] MLS# ${r.mlsNumber}`, details].filter(Boolean).join(' | ')
+    const notes = [`MLS# ${r.mlsNumber}`, details].filter(Boolean).join(' | ')
 
     setAddError('')
     try {
-      const id = await saveProperty({ address: fullAddress, notes, status: 'lead' })
+      const id = await saveProperty({
+        address: fullAddress, notes, status: 'lead',
+        image_url: r.image, list_price: r.listPrice, beds: r.beds, baths: r.baths, sqft: r.sqft,
+      })
       // saveProperty doesn't surface Supabase errors (e.g. an RLS rejection) — it just
       // returns '' — so treat a falsy id as a failed write, not a success.
       if (!id) throw new Error('Save returned no id — check Supabase write permissions (RLS).')
