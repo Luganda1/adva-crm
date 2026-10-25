@@ -28,6 +28,7 @@ interface Ctx {
   printLetterFn: (content: string) => void
   gsUrl: string; setGsUrl: (url: string) => void
   syncSheet: () => Promise<string>
+  syncHud: () => Promise<string>
   matchNotes: (text: string) => { matched: Property | null; score: number } | null
   saveNoteToProperty: (id: string, text: string) => Promise<void>
   saveNoteAsNew: (text: string) => Promise<void>
@@ -273,6 +274,17 @@ export function CRMProvider({ children, initialProperties = [], initialPartners 
     } catch { return 'Sync failed — check URL and permissions' }
   }, [gsUrl, importRows])
 
+  const syncHud = useCallback(async (): Promise<string> => {
+    try {
+      const res = await fetch('/api/hud-sync', { method: 'POST' })
+      const data = await jsonOrThrow(res)
+      await loadAll()
+      return `✓ ${data.added} added, ${data.skipped} already in CRM (${data.total} total HUD listings)`
+    } catch (e) {
+      return `Sync failed — ${e instanceof Error ? e.message : 'unknown error'}`
+    }
+  }, [loadAll])
+
   const matchNotes = useCallback((text: string) => {
     if (!text.trim()) return null
     let best: Property | null = null, bestScore = 0
@@ -308,11 +320,11 @@ export function CRMProvider({ children, initialProperties = [], initialPartners 
     saveProperty, deleteProperty, logFollowup, deleteFU, uploadDocs, deleteDoc, saveSkipTrace,
     savePartner, deletePartner, saveBuyer, deleteBuyer, importRows,
     sender, updateSender, tplBody, saveTpl, resetTpl, generateLetter, printLetterFn,
-    gsUrl, setGsUrl, syncSheet, matchNotes, saveNoteToProperty, saveNoteAsNew,
+    gsUrl, setGsUrl, syncSheet, syncHud, matchNotes, saveNoteToProperty, saveNoteAsNew,
   }), [properties, partners, buyers, syncStatus, syncLabel, loadAll, saveProperty, deleteProperty,
     logFollowup, deleteFU, uploadDocs, deleteDoc, saveSkipTrace, savePartner, deletePartner,
     saveBuyer, deleteBuyer, importRows, sender, updateSender, tplBody, saveTpl, resetTpl,
-    generateLetter, printLetterFn, gsUrl, setGsUrl, syncSheet, matchNotes, saveNoteToProperty, saveNoteAsNew])
+    generateLetter, printLetterFn, gsUrl, setGsUrl, syncSheet, syncHud, matchNotes, saveNoteToProperty, saveNoteAsNew])
 
   return <CRMContext.Provider value={value}>{children}</CRMContext.Provider>
 }
