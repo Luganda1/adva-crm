@@ -2,43 +2,67 @@
 import { useEffect, useRef } from 'react'
 import { useGoogleMapsLoaded } from '@/lib/use-google-maps'
 
-// Drop-in replacement for a plain <input> address field — attaches Google
-// Places Autocomplete once the Maps script is loaded (progressive
-// enhancement: works as a normal text input before that, or if there's no
-// API key at all). Free typing still works; picking a suggestion fills in
-// the full formatted address.
+// Google's classic google.maps.places.Autocomplete widget (bound to a plain
+// <input>) isn't available to new Cloud projects as of March 2025 — this uses
+// its replacement, PlaceAutocompleteElement, a Web Component that renders its
+// own input rather than attaching to an existing one. Falls back to a plain
+// text input before Maps has loaded (or if there's no API key) — never blocks
+// typing.
+//
+// Behavioral note: unlike the legacy widget, this doesn't naturally forward
+// every keystroke the way a real controlled <input> does — 'gmp-select' only
+// fires when a suggestion is picked. Someone who types a full address and
+// never clicks a suggestion still needs that text to reach React state, so
+// this also listens for the element's own 'input'/'change' events and syncs
+// on blur as a fallback, reading the element's own .value rather than
+// assuming selection is the only path to a usable address.
 export default function AddressInput({ value, onChange, placeholder, className, autoFocus }: {
   value: string; onChange: (v: string) => void; placeholder?: string; className?: string; autoFocus?: boolean
 }) {
-  const inputRef = useRef<HTMLInputElement>(null)
-  const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const elementRef = useRef<google.maps.places.PlaceAutocompleteElement | null>(null)
+  const onChangeRef = useRef(onChange)
+  onChangeRef.current = onChange
   const loaded = useGoogleMapsLoaded()
 
   useEffect(() => {
-    if (!loaded || !inputRef.current || autocompleteRef.current) return
-    const ac = new window.google.maps.places.Autocomplete(inputRef.current, {
-      types: ['address'],
-      fields: ['formatted_address'],
-    })
-    ac.addListener('place_changed', () => {
-      const place = ac.getPlace()
-      if (place.formatted_address) onChange(place.formatted_address)
-    })
-    autocompleteRef.current = ac
-    // Google's dropdown is appended to document.body on first open and
-    // never removed — nothing to clean up on unmount beyond the listener,
-    // which Maps itself garbage-collects with the Autocomplete instance.
-  }, [loaded, onChange])
+    if (!loaded || !containerRef.current || elementRef.current) return
+    const el = new window.google.maps.places.PlaceAutocompleteElement({})
+    el.placeholder = placeholder || ''
+    if (value) el.value = value
+    if (autoFocus) requestAnimationFrame(() => el.focus?.())
 
-  return (
-    <input
-      ref={inputRef}
-      value={value}
-      onChange={e => onChange(e.target.value)}
-      placeholder={placeholder}
-      className={className}
-      autoComplete="off"
-      autoFocus={autoFocus}
-    />
-  )
+    el.addEventListener('gmp-select', async (e: google.maps.places.PlacePredictionSelectEvent) => {
+      const place = e.placePrediction.toPlace()
+      await place.fetchFields({ fields: ['formattedAddress'] })
+      if (place.formattedAddress) onChangeRef.current(place.formattedAddress)
+    })
+    // Fallback for free-typed text that was never picked from the dropdown.
+    const syncFreeText = () => onChangeRef.current(el.value || '')
+    el.addEventListener('input', syncFreeText)
+    el.addEventListener('change', syncFreeText)
+    el.addEventListener('blur', syncFreeText)
+
+    containerRef.current.appendChild(el)
+    elementRef.current = el
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, placeholder])
+
+  // Keep the element's displayed text in sync when the parent resets it
+  // externally (e.g. opening the modal for a different property, or clearing
+  // the form) — but don't fight the user's own typing on every render.
+  useEffect(() => {
+    if (elementRef.current && elementRef.current.value !== value) {
+      elementRef.current.value = value
+    }
+  }, [value])
+
+  if (!loaded) {
+    return (
+      <input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
+        className={className} autoComplete="off" autoFocus={autoFocus} />
+    )
+  }
+
+  return <div ref={containerRef} className={className} />
 }
