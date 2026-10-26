@@ -1,13 +1,13 @@
 'use client'
-import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import { useCRM } from '@/contexts/CRMContext'
-import { dateInRange, getDateForField, fmtD } from '@/lib/utils'
 import { useGoogleMapsLoaded } from '@/lib/use-google-maps'
-import PropertyPanel from './PropertyPanel'
-import AddPropertyModal from './AddPropertyModal'
-import SkipTraceModal from './SkipTraceModal'
+import { dateInRange, fmtD, getDateForField } from '@/lib/utils'
 import type { Property } from '@/types'
+import { useRouter } from 'next/navigation'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import AddPropertyModal from './AddPropertyModal'
+import PropertyPanel from './PropertyPanel'
+import SkipTraceModal from './SkipTraceModal'
 
 const STATUS_COLORS: Record<string, string> = {
   lead: '#888780', active: '#2E7D4F', probate: '#B07400', foreclosure: '#D63C3C', auction: '#1A6BB8',
@@ -38,6 +38,7 @@ export default function MapView() {
   const [geocodeMsg, setGeocodeMsg] = useState('')
 
   // Filters
+  const [mapSearch, setMapSearch] = useState('')
   const [checkedStatuses, setCheckedStatuses] = useState<Set<string>>(
     new Set(['lead', 'active', 'probate', 'foreclosure', 'auction'])
   )
@@ -64,8 +65,21 @@ export default function MapView() {
       const d = getDateForField(p, mapDateType)
       if (!dateInRange(d, mapDateRange)) return false
     }
+    if (mapSearch.trim()) {
+      const q = mapSearch.trim().toLowerCase()
+      const txt = [p.address, p.owner_name, p.phone].join(' ').toLowerCase()
+      if (!txt.includes(q)) return false
+    }
     return true
-  }), [properties, checkedStatuses, mapDateType, mapDateRange])
+  }), [properties, checkedStatuses, mapDateType, mapDateRange, mapSearch])
+
+  // When a search narrows it down to exactly one property, open its detail
+  // panel automatically — the map itself already re-fits bounds to whatever
+  // filteredProps contains (see the geocode/render effect below), so a
+  // single match also zooms in on its pin with no extra code needed there.
+  useEffect(() => {
+    if (mapSearch.trim() && filteredProps.length === 1) setActiveId(filteredProps[0].id)
+  }, [mapSearch, filteredProps])
 
   // Initialize map after script loads
   const initMap = useCallback(() => {
@@ -258,6 +272,25 @@ export default function MapView() {
       <div className="flex gap-2.5 flex-wrap items-start mb-0">
         {/* Left sidebar */}
         <div className="flex flex-col gap-2.5" style={{ width: 256, flexShrink: 0 }}>
+
+          {/* Look up a property */}
+          <div className="bg-white border border-gray-200 rounded-xl p-3.5">
+            <div className="panel-sec-title mb-2">Look up a property</div>
+            <div className="relative">
+              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">🔍</span>
+              <input value={mapSearch} onChange={e => setMapSearch(e.target.value)}
+                placeholder="Address, owner, or phone..."
+                className="w-full pl-7 pr-7 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand" />
+              {mapSearch && (
+                <button onClick={() => setMapSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-300 hover:text-red-500 text-xs">✕</button>
+              )}
+            </div>
+            {mapSearch.trim() && (
+              <div className="text-xs mt-1.5" style={{ color: 'var(--gray)' }}>
+                {filteredProps.length === 0 ? 'No match' : filteredProps.length === 1 ? '1 match — zoomed in' : `${filteredProps.length} matches`}
+              </div>
+            )}
+          </div>
 
           {/* Status filter */}
           <div className="bg-white border border-gray-200 rounded-xl p-3.5">
