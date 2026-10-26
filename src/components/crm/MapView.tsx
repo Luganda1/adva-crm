@@ -38,7 +38,9 @@ export default function MapView() {
   const [geocodeMsg, setGeocodeMsg] = useState('')
 
   // Filters
+  const searchInputRef = useRef<HTMLInputElement>(null)
   const [mapSearch, setMapSearch] = useState('')
+  const [searchFocused, setSearchFocused] = useState(false)
   const [checkedStatuses, setCheckedStatuses] = useState<Set<string>>(
     new Set(['lead', 'active', 'probate', 'foreclosure', 'auction'])
   )
@@ -276,14 +278,21 @@ export default function MapView() {
           {/* Look up a property */}
           <div className="bg-white border border-gray-200 rounded-xl p-3.5">
             <div className="panel-sec-title mb-2">Look up a property</div>
-            <div className="relative">
-              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">🔍</span>
-              <input value={mapSearch} onChange={e => setMapSearch(e.target.value)}
-                placeholder="Address, owner, or phone..."
-                className="w-full pl-7 pr-7 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand" />
-              {mapSearch && (
-                <button onClick={() => setMapSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-300 hover:text-red-500 text-xs">✕</button>
-              )}
+            <div className="flex gap-1.5">
+              <div className="relative flex-1 min-w-0">
+                {!searchFocused && (
+                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">🔍</span>
+                )}
+                <input ref={searchInputRef} value={mapSearch} onChange={e => setMapSearch(e.target.value)}
+                  onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)}
+                  onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur() }}
+                  placeholder="Address, owner, or phone..."
+                  className={`w-full ${searchFocused ? 'pl-2.5' : 'pl-7'} pr-7 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand`} />
+                {mapSearch && (
+                  <button onClick={() => setMapSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-300 hover:text-red-500 text-xs">✕</button>
+                )}
+              </div>
+              <button className="btn btn-primary btn-sm flex-shrink-0" onClick={() => searchInputRef.current?.blur()}>Search</button>
             </div>
             {mapSearch.trim() && (
               <div className="text-xs mt-1.5" style={{ color: 'var(--gray)' }}>
