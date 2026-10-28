@@ -17,6 +17,9 @@ export default function HudLeadsView() {
   const [page, setPage] = useState(1)
   const [addingCase, setAddingCase] = useState<string | null>(null)
   const [addError, setAddError] = useState('')
+  const [scores, setScores] = useState<Record<string, { score: number; reason: string }>>({})
+  const [triaging, setTriaging] = useState(false)
+  const [triageError, setTriageError] = useState('')
 
   useEffect(() => {
     fetch('/api/hud-listings')
@@ -53,10 +56,38 @@ export default function HudLeadsView() {
     })
   }, [listings, search, stateFilter])
 
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
-  const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  // Once a triage has run, sort by score (unscored listings sink to the
+  // bottom) — the whole point of the feature is not having to scan all 600
+  // rows manually.
+  const sorted = useMemo(() => {
+    if (Object.keys(scores).length === 0) return filtered
+    return [...filtered].sort((a, b) => (scores[b.caseNum]?.score ?? -1) - (scores[a.caseNum]?.score ?? -1))
+  }, [filtered, scores])
+
+  const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE))
+  const pageRows = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   function resetPage() { setPage(1) }
+
+  async function runTriage() {
+    setTriaging(true); setTriageError('')
+    try {
+      const res = await fetch('/api/hud-triage', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ listings: filtered }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || `Triage failed (${res.status})`)
+      const next: Record<string, { score: number; reason: string }> = {}
+      for (const s of data.scores || []) next[s.caseNum] = { score: s.score, reason: s.reason }
+      setScores(next)
+      setPage(1)
+    } catch (e) {
+      setTriageError(e instanceof Error ? e.message : 'Triage failed')
+    } finally {
+      setTriaging(false)
+    }
+  }
 
   async function addToCrm(l: HudListing) {
     setAddError(''); setAddingCase(l.caseNum)
@@ -94,10 +125,17 @@ export default function HudLeadsView() {
               <option value="">All states</option>
               {states.map(s => <option key={s} value={s!}>{s}</option>)}
             </select>
+            <button className="btn btn-outline btn-sm" disabled={triaging || filtered.length === 0} onClick={runTriage}>
+              {triaging ? 'Scoring...' : '🤖 Rank by Buyer Fit'}
+            </button>
             <span className="text-sm ml-auto" style={{ color: 'var(--gray)' }}>
               {filtered.length === listings.length ? `${listings.length} properties` : `${filtered.length} of ${listings.length} properties`}
             </span>
           </div>
+
+          {triageError && (
+            <div className="text-sm rounded-lg px-3.5 py-2.5 mb-3.5" style={{ background: 'var(--amber-light)', color: 'var(--amber)' }}>⚠️ {triageError}</div>
+          )}
 
           {addError && (
             <div className="text-sm rounded-lg px-3.5 py-2.5 mb-3.5" style={{ background: 'var(--red-light)', color: 'var(--red)' }}>⚠️ {addError}</div>
@@ -110,7 +148,7 @@ export default function HudLeadsView() {
               <table className="w-full text-sm" style={{ borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                    {['Address', 'City', 'State', 'Zip', 'Case #', 'Acquired', '', ''].map(h => (
+                    {['Match', 'Address', 'City', 'State', 'Zip', 'Case #', 'Acquired', '', ''].map(h => (
                       <th key={h} className="text-left px-3.5 py-2.5 text-xs font-bold uppercase tracking-wide whitespace-nowrap" style={{ color: 'var(--gray)' }}>{h}</th>
                     ))}
                   </tr>
@@ -120,6 +158,15 @@ export default function HudLeadsView() {
                     const added = casesInCrm.has(l.caseNum)
                     return (
                       <tr key={l.caseNum} className="hover:bg-gray-50" style={{ borderBottom: '1px solid var(--border)' }}>
+                        <td className="px-3.5 py-2.5 whitespace-nowrap">
+                          {scores[l.caseNum] ? (
+                            <span title={scores[l.caseNum].reason} className="badge" style={{
+                              background: scores[l.caseNum].score >= 60 ? 'var(--green-light)' : scores[l.caseNum].score >= 30 ? 'var(--amber-light)' : 'var(--gray-light)',
+                              color: scores[l.caseNum].score >= 60 ? 'var(--green)' : scores[l.caseNum].score >= 30 ? 'var(--amber)' : 'var(--gray)',
+                              cursor: 'help',
+                            }}>{scores[l.caseNum].score}</span>
+                          ) : <span style={{ color: '#ccc' }}>—</span>}
+                        </td>
                         <td className="px-3.5 py-2.5 font-medium whitespace-nowrap">{l.address.split(',')[0]}</td>
                         <td className="px-3.5 py-2.5 whitespace-nowrap">{l.city}</td>
                         <td className="px-3.5 py-2.5 whitespace-nowrap">{l.state}</td>
