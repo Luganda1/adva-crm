@@ -59,6 +59,10 @@ body { font-family: 'Open Sans', sans-serif; background: #F7F7F7; color: var(--c
   .panel-overlay.open { @apply block; }
   .modal-wrap { @apply hidden fixed inset-0 z-50 items-center justify-center p-5; background: rgba(0,0,0,.45); }
   .modal-wrap.open { @apply flex; }
+  /* Google Places Autocomplete appends its suggestion dropdown to <body>,
+     outside any modal's stacking context — without this it renders behind
+     modal-wrap's z-50 overlay (z-index: 1000 safely clears it). */
+  .pac-container { z-index: 1000 !important; }
   .modal { @apply bg-white rounded-xl w-full max-w-xl overflow-y-auto; max-height: 92vh; box-shadow: var(--shadow-md); }
   .modal-head { @apply flex items-center justify-between px-5 py-4 border-b border-gray-200; }
   .modal-body { @apply p-5; }

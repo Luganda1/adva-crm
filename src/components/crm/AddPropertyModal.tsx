@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { useCRM } from '@/contexts/CRMContext'
+import AddressInput from '@/components/ui/AddressInput'
 import type { Property } from '@/types'
 
 const STATUSES = ['lead', 'active', 'probate', 'foreclosure', 'auction'] as const
@@ -55,7 +56,7 @@ export default function AddPropertyModal({ open, editProperty: ep, onClose, onSa
         </div>
         <div className="modal-body">
           <div className="form-group"><label className="form-label">Property Address *</label>
-            <input value={addr} onChange={e => setAddr(e.target.value)} placeholder="123 Main St, City, CA 90001" className="form-input" /></div>
+            <AddressInput value={addr} onChange={setAddr} placeholder="123 Main St, City, CA 90001" className="form-input" /></div>
           <div className="form-row">
             <div className="form-group"><label className="form-label">Status</label>
               <select value={status} onChange={e => setStatus(e.target.value)} className="form-input">
