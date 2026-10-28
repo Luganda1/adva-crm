@@ -10,7 +10,7 @@ import { NextRequest, NextResponse } from 'next/server'
 // expanding scope into re-auditing every route's auth model in this same
 // change — Zapier's own calls to /api/leads and /api/properties have no user
 // session at all and must keep working.
-const PUBLIC_PATHS = ['/', '/login']
+const PUBLIC_PATHS = ['/', '/login', '/about', '/services']
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
@@ -53,8 +53,11 @@ export async function middleware(req: NextRequest) {
   const isPublicPage = PUBLIC_PATHS.includes(pathname)
 
   if (!user && !isPublicPage) {
+    // Land on the public marketing page first, not straight into the login
+    // form — the landing page's own "Sign in" links forward redirectTo to
+    // /login so the user still ends up where they meant to go.
     const url = req.nextUrl.clone()
-    url.pathname = '/login'
+    url.pathname = '/'
     url.searchParams.set('redirectTo', pathname)
     return NextResponse.redirect(url)
   }

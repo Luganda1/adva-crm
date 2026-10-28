@@ -418,7 +418,7 @@ External lead flow:
 
 Email/password auth via Supabase Auth, cookie-based sessions (not localStorage), so the server and browser see the same session. Built for a small team sharing one CRM dataset — there's no per-row ownership or multi-tenant split; anyone with an account sees everything, same as before auth existed.
 
-- **`src/middleware.ts`** — refreshes the session cookie on every request (`supabase.auth.getUser()` inside the `setAll` cookie callback) and redirects unauthenticated requests for any non-public page to `/login?redirectTo=<path>`. Public paths: `/` and `/login`. Already-authenticated visits to `/login` bounce to `/leads`. This same middleware still applies CORS headers to `/api/*` exactly as before — that logic is unchanged, just living alongside the new auth check in one file.
+- **`src/middleware.ts`** — refreshes the session cookie on every request (`supabase.auth.getUser()` inside the `setAll` cookie callback) and redirects unauthenticated requests for any non-public page to `/?redirectTo=<path>` — the landing page, not `/login` directly (see [§8](#8-pages--routes) for the full flow). Public paths: `/`, `/login`, `/about`, `/services`. Already-authenticated visits to `/login` bounce to `/leads`. This same middleware still applies CORS headers to `/api/*` exactly as before — that logic is unchanged, just living alongside the new auth check in one file.
 - **`src/app/(app)/layout.tsx`** — the actual data-access gate. Calls `createAuthServerClient().auth.getUser()` and `redirect('/login')` server-side if there's no user, *before* fetching any CRM data. Middleware's redirect is a routing nicety; this is the check that actually matters, since it runs right before the Supabase queries.
 - **Sign in**: `src/app/login/page.tsx`, a client component using `supabase.auth.signInWithPassword()`. Uses a full `window.location.href` navigation on success (not `router.push`) so middleware re-runs with the fresh cookie and the server-rendered `(app)/layout.tsx` sees the session on the very next request — a client-side route change raced ahead of the cookie write in testing.
 - **Sign out**: `src/components/SignOutButton.tsx`, shared by both `CRMChrome` and `MPChrome` headers. Calls `supabase.auth.signOut()` then a full navigation to `/login`.
@@ -450,8 +450,12 @@ The anon-key clients exist **only** to answer "who is logged in" — never for q
 
 | Route | Component | Description |
 |---|---|---|
-| `/` | `app/page.tsx` | Public marketing landing page — feature highlights, "Sign in" CTA |
+| `/` | `app/page.tsx` | Public marketing landing page — hero, product preview, features, "Sign in" CTA. Where every unauthenticated visitor lands (see below) and where sign-out returns to |
+| `/about` | `app/about/page.tsx` | About Us |
+| `/services` | `app/services/page.tsx` | Full services/features list — same `FEATURES` data as the landing page, via `lib/marketing-content.ts` |
 | `/login` | `app/login/page.tsx` | Email/password sign-in form |
+
+**Unauthenticated-visitor flow**: middleware redirects a logged-out visit to any protected page to `/?redirectTo=<path>` — the *landing page*, not straight to `/login`. The landing page's own "Sign in" links (nav + both CTAs) forward that `redirectTo` into `/login?redirectTo=<path>`, so the user still ends up back where they meant to go after signing in. `SignOutButton` also returns to `/` rather than `/login`. `MarketingNav`/`MarketingFooter` (`src/components/marketing/`) are shared across `/`, `/about`, and `/services`.
 
 ### CRM Module
 
@@ -727,6 +731,13 @@ git push origin main
 ## 14. Changelog
 
 Notable shipped work, newest first. Not every commit — just things worth a future reader knowing happened.
+
+### 2026-10-28 — Logged-out visitors land on the marketing page; About/Services pages; redesigned nav
+
+Follow-up to the auth work below, same day. Three changes:
+- Unauthenticated visits to any protected page now redirect to `/?redirectTo=<path>` (the landing page) instead of straight to `/login` — the landing page's own "Sign in" links forward `redirectTo` into `/login`. `SignOutButton` returns to `/` instead of `/login` too.
+- New `/about` and `/services` pages; `MarketingNav`/`MarketingFooter` (`src/components/marketing/`) shared across all three public pages. Nav order: About Us, Services, Sign in.
+- Shared feature copy pulled into `src/lib/marketing-content.ts` so the landing page's feature grid and `/services`'s full list can't drift apart.
 
 ### 2026-10-28 — Supabase Auth (email/password) + public landing page
 
