@@ -4,6 +4,7 @@ import { CRMProvider } from '@/contexts/CRMContext'
 import { MPProvider } from '@/contexts/MPContext'
 import CRMChrome from './crm/CRMChrome'
 import MPChrome from './money-partners/MPChrome'
+import FloatingAssistant from './crm/FloatingAssistant'
 import type { Property, Partner, Buyer, MoneyPartner } from '@/types'
 
 interface Props {
@@ -18,6 +19,7 @@ export default function AppShell({ children, initialProperties, initialPartners,
     <CRMProvider initialProperties={initialProperties} initialPartners={initialPartners} initialBuyers={initialBuyers}>
       <MPProvider initialPartners={initialMPPartners}>
         {isMP ? <MPChrome>{children}</MPChrome> : <CRMChrome>{children}</CRMChrome>}
+        <FloatingAssistant />
       </MPProvider>
     </CRMProvider>
   )

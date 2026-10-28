@@ -457,7 +457,6 @@ There is deliberately no anon-key client anywhere in the browser bundle.
 | `/import` | `ImportView` | Bulletproof CSV import with preview + column mapping |
 | `/property-search` | `PropertySearchView` | Search an address via Repliers, Add to CRM |
 | `/hud-leads` | `HudLeadsView` | Browse HUD REO listings, AI-rank by buyer fit, Add to CRM |
-| `/assistant` | `AssistantView` | Chat with real CRM data via AI tool calling |
 | `/settings` | `SettingsView` | Sender info, Google Sheets sync, letter templates |
 
 ### Money Partners Module
@@ -467,6 +466,8 @@ There is deliberately no anon-key client anywhere in the browser bundle.
 | `/money-partners` | Financing partner list + detail panel |
 | `/money-partners/pipeline` | Deal pipeline view |
 | `/money-partners/deals` | All logged deals |
+
+**Not a route:** the AI chat assistant (`POST /api/assistant`) isn't a page — it's a global floating widget (`FloatingAssistant.tsx`, mounted once in `AppShell`), available on every page including Money Partners. See [§10](#10-key-components).
 
 ---
 
@@ -557,9 +558,13 @@ Mail merge for 6 letter types: probate owner/lawfirm, foreclosure owner/lawfirm,
 
 **🤖 Rank by Buyer Fit** button: sends the currently-*filtered* listings (respects the search/state filters already applied — doesn't re-score everything if the user narrowed it down first) to `POST /api/hud-triage`, which scores them against every row in the `buyers` table using Groq (`src/lib/groq.ts` — see [§11](#11-external-integrations) for the model/provider details and the real rate-limit retry logic). Scores render as a color-coded badge (green ≥60, amber ≥30, gray below) with the model's one-line reasoning on hover, and the table re-sorts by score descending once a triage has run. Fails gracefully with a clear error if there are no buyers configured yet, or if Groq errors out — "Add to CRM" keeps working either way; this feature is additive, never load-bearing.
 
-### `AssistantView.tsx` — chat with real CRM data via tool calling
+### `FloatingAssistant.tsx` — chat with real CRM data via tool calling
 
-`/assistant`: a chat UI backed by `POST /api/assistant` (see [§6](#6-api-reference)). Unlike HUD triage's single-shot call, this is a genuine multi-turn tool-calling loop — the model can call `search_properties`/`get_property` (defined in `src/lib/assistant-tools.ts`, real Supabase queries, not fake data) to ground its answers in actual CRM data, and the route loops (execute tool → send result back → repeat) until the model stops requesting tools and gives a final answer. The system prompt explicitly forbids inventing facts not returned by a tool call — verified directly: asked about a nonexistent address and a state with zero matching leads, got honest "not found" / "you have none" answers both times, not fabricated ones.
+A global floating widget, not a page — an oval `💬 Ask AI` button fixed to the bottom-left of every screen (originally built as a dedicated `/assistant` page/route, replaced with this after the first round of feedback: a chat you'd want open *while* looking at other data doesn't belong behind a nav tab). Mounted once in `AppShell`, so it's present everywhere, including Money Partners. Expands into a compact chat panel in place; backed by `POST /api/assistant` (see [§6](#6-api-reference)).
+
+Because `AppShell` doesn't unmount across client-side navigation (same layout boundary the whole app shares — see [§7](#7-application-architecture)), the conversation survives switching pages for free, no extra state management needed. Verified directly: asked a question on `/leads`, navigated to `/map`, the full exchange was still there.
+
+Unlike HUD triage's single-shot call, this is a genuine multi-turn tool-calling loop — the model can call `search_properties`/`get_property` (defined in `src/lib/assistant-tools.ts`, real Supabase queries, not fake data) to ground its answers in actual CRM data, and the route loops (execute tool → send result back → repeat) until the model stops requesting tools and gives a final answer. The system prompt explicitly forbids inventing facts not returned by a tool call — verified directly: asked about a nonexistent address and a state with zero matching leads, got honest "not found" / "you have none" answers both times, not fabricated ones.
 
 Client only ever sends/stores clean user/assistant text — the intermediate tool-call exchange lives and dies within one server request, so every new question re-triggers fresh tool calls rather than trusting something the assistant "remembers." Verified this doesn't break follow-up questions: "How many total leads?" → "6", then "What about just in Colorado?" (no mention of 'leads' at all) correctly re-ran the search with a Colorado filter and answered "1" — both numbers confirmed against the real database, not just plausible-sounding.
 
@@ -736,6 +741,10 @@ git push origin main
 ## 14. Changelog
 
 Notable shipped work, newest first. Not every commit — just things worth a future reader knowing happened.
+
+### 2026-10-28 — Assistant redesigned: floating widget, not a page
+
+Replaced the standalone `/assistant` page + nav tab with `FloatingAssistant.tsx` — a global oval button fixed bottom-left, mounted once in `AppShell`, present on every page. Deleted the old page/route/view entirely rather than leaving both. Confirmed conversation state survives navigating between pages (free, from `AppShell` never unmounting across client-side nav) and that the collapse/expand toggle works correctly.
 
 ### 2026-10-28 — AI chat assistant shipped (Groq, tool calling)
 
