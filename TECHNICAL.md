@@ -154,6 +154,7 @@ adva-crm/
 | `CRON_SECRET` | Recommended | Secures the `/api/cron/keep-alive` endpoint |
 | `RENTCAST_API_KEY` | Optional | RentCast property enrichment (50 calls/month free — requires CC) |
 | `REPLIERS_API_KEY` | Optional | Repliers property search (`/property-search`, `/api/property-search`) — see [§11](#11-external-integrations) |
+| `GROQ_API_KEY` | Planned, not yet in use | Free-tier Groq API key for AI HUD lead triage — see [TODO 9](#15-todo--planned-features). Server-only — never give this the `NEXT_PUBLIC_` prefix; in Vercel it's a **Secret**, not Config (unlike the Maps key — it's never used client-side) |
 | `WEBHOOK_SECRET` | Optional | Validates incoming webhook payloads |
 | `ZAP_INBOUND_URL` | Optional | Zapier catch hook URL for outbound CRM notifications |
 
@@ -593,6 +594,24 @@ Configure a published Google Sheets CSV URL in `/settings`. The CRM fetches it a
 
 No public API. `zillowUrl()` in `lib/utils.ts` builds `https://www.zillow.com/homes/<encoded address>_rb/` — Zillow's own site-search URL pattern, used unofficially (not guaranteed stable, no SLA). Curl-testing this pattern returns a `403` due to Zillow's bot detection blocking non-browser requests — that's expected and doesn't indicate the link is broken for a real person clicking it in an actual browser. Redfin and Realtor.com were considered and rejected for the same treatment: neither has an address-to-listing URL pattern that doesn't require hitting a non-public internal API first.
 
+### Groq (AI, planned — see TODO 9)
+
+**Not built yet** — this section documents the provider choice so the build in [TODO 9](#15-todo--planned-features) needs no re-research.
+
+Chosen specifically because this project has **no budget for paid AI APIs**. Checked three options before picking this one (checked live, not from memory — see the conversation that led to this entry):
+
+| Provider | Credit card? | Free limits | Verdict |
+|---|---|---|---|
+| **Groq** | Never required for the free tier (optional, only to raise limits) | `llama-3.3-70b-versatile`: 30 req/min, **1,000 req/day** · `llama-3.1-8b-instant`: 30 req/min, 14,400 req/day | **Chosen** |
+| Google Gemini | Not required | Varies by model, as low as ~20 req/day on some current Flash tiers — got much stingier than its reputation suggests | Too thin to build on |
+| Anthropic (Claude API) | Not required for the trial, but phone verification is | One-time ~$5 credit, **expires ~14 days after claiming** | Not an ongoing free tier — a trial |
+
+- Base URL: `https://api.groq.com/openai/v1/chat/completions` — OpenAI-compatible request/response shape.
+- Auth: `Authorization: Bearer $GROQ_API_KEY` header.
+- No official Anthropic/Groq SDK needed — a plain `fetch()` wrapper is enough (same lightweight-integration pattern already used for Repliers/HUD/RentCast in this codebase). Confirm the exact current model ID at build time (`llama-3.3-70b-versatile` as of this writing) — Groq's catalog changes.
+- Known limits to design around: free-tier rate limits apply per organization, not per key — creating more keys doesn't raise the ceiling. Daily quota resets at midnight UTC. No SLA — treat every Tier-3 AI feature as optional/best-effort in the UI (clear loading/error states, never block a core CRM action on it), not something the app depends on to function.
+- Quality tradeoff, stated plainly: Llama 3.3 70B is noticeably behind Claude on nuanced reasoning. Fine for classification/ranking tasks (TODO 9). **Do not** use it for anything with real financial-estimation stakes (e.g. an ARV/repair-cost/MAO assistant) without the user explicitly accepting that tradeoff first — a wrong number there has real consequences.
+
 ---
 
 ## 12. Deployment
@@ -674,6 +693,10 @@ git push origin main
 ## 14. Changelog
 
 Notable shipped work, newest first. Not every commit — just things worth a future reader knowing happened.
+
+### 2026-10-27 — AI HUD triage planned (not built) — Groq chosen over paid providers
+
+Planning only, no code: this project has no budget for a paid AI API. Checked Groq, Google Gemini, and the Anthropic API's trial credit live (current numbers, not assumed) before picking Groq's free tier — see [TODO 9](#15-todo--planned-features) for the full spec and [§11](#11-external-integrations) for the provider comparison. Fully specified so building it is mechanical once a `GROQ_API_KEY` exists: exact files, request shape, batching math against the free-tier daily limit, prompt design, and what's explicitly out of scope (no ARV/underwriting assistant on a free model, no call transcription — different task entirely).
 
 ### 2026-10-25 — Property Search (Repliers), MLS listing details, Zillow badge, critical RLS fix
 
@@ -799,11 +822,69 @@ Features discussed and planned but not yet built, in priority order:
 **Why:** Instead of relying only on Realeflow, pull leads from public free sources.
 
 **Sources to integrate:**
-- **HUD REO listings** — `hudgov` API, completely free
-- **Fannie Mae HomePath** — public listings, scrapeable
-- **Tax delinquent lists** — county-by-county, most publish CSV downloads
-- **Driving for Dollars** — covered by TODO 2 (mobile quick-add)
+- **HUD REO listings** — done, see `/hud-leads` and [§11](#11-external-integrations). Note: this TODO item's original text claimed a "`hudgov` API" — that was wrong/vague; the real thing is HUD's own ArcGIS FeatureServer (`src/lib/hud-reo.ts`), confirmed and documented when this was built.
+- **Fannie Mae HomePath** — still open. The listing site is live, but no official API exists for it — would mean scraping their commercial site, more fragile and more ToS risk than HUD's `.gov` open-data portal. Deprioritized; not started.
+- **Tax delinquent lists** — still open, genuinely no single source — county-by-county, most publish their own CSV. `/import` already handles this with zero new code: download a county's roll, upload it there.
+- **Driving for Dollars** — covered by TODO 2 (mobile quick-add), not started.
 
 ---
 
-*Last updated: 2026-10-25*
+### TODO 9 — AI HUD Lead Triage via Groq (free tier)
+
+**Status: fully specified, zero code written.** Decided and researched in-session (budget constraint ruled out a paid AI provider — see the Groq writeup in [§11](#11-external-integrations) for why Groq specifically, with real current free-tier numbers for all three providers considered). This entry has everything needed to build it in one sitting with no re-research — follow it in order.
+
+**Why:** `/hud-leads` (built, see [§10](#10-key-components)) shows all ~600+ current HUD REO listings nationwide as a flat browsable table with manual "Add to CRM" per row — no ranking, no filtering against what the user actually buys. This adds a "🤖 Rank by Buyer Fit" button that scores every visible listing against the user's actual buyer criteria (the `buyers` table — price range, areas, property types already in the schema) and sorts the table by fit, so the user isn't manually scanning 600 rows.
+
+**Step 0 — prerequisite (do this first, before any code):**
+1. Sign up at [console.groq.com](https://console.groq.com) — free, no credit card.
+2. Create an API key, add `GROQ_API_KEY` to `.env.local`.
+3. Confirm the current model ID — this doc assumes `llama-3.3-70b-versatile` as of 2026-10-27, but Groq's catalog changes; check [console.groq.com](https://console.groq.com) for the current best free-tier model before writing the request code, and update this doc if it's changed.
+4. Later, add `GROQ_API_KEY` to Vercel as a **Secret** (not Config — it's server-only, never sent to the browser; see [§4](#4-environment-variables)).
+
+**Files to create:**
+
+| File | Responsibility |
+|---|---|
+| `src/lib/groq.ts` | Thin `fetch()` wrapper around Groq's chat completions endpoint. No SDK dependency — same lightweight pattern as `lib/hud-reo.ts`. One exported function, e.g. `rankHudListings(listings, buyerCriteria): Promise<{caseNum: string, score: number, reason: string}[]>`. |
+| `src/app/api/hud-triage/route.ts` | `POST` handler. Server-side only (needs `GROQ_API_KEY`, never exposed to the browser). Fetches current buyers via `serverSupabase()`, receives the listings to score in the request body (the client already has them loaded from `GET /api/hud-listings` — don't re-fetch HUD server-side, just pass through what the browser already has), calls `rankHudListings()`, returns the scored array. Gate with `checkApiKey()` like the other UI-facing routes. |
+| `src/components/crm/HudLeadsView.tsx` (edit, not new) | Add the "🤖 Rank by Buyer Fit" button, a `scores: Record<caseNum, {score, reason}>` state, a new sortable "Match" column, and a loading/error state for the triage call. |
+
+**Request shape (Groq, OpenAI-compatible):**
+```
+POST https://api.groq.com/openai/v1/chat/completions
+Authorization: Bearer $GROQ_API_KEY
+Content-Type: application/json
+
+{
+  "model": "llama-3.3-70b-versatile",
+  "messages": [
+    { "role": "system", "content": "<prompt — see below>" },
+    { "role": "user", "content": "<JSON array of listings + buyer criteria>" }
+  ],
+  "response_format": { "type": "json_object" }
+}
+```
+Confirm `response_format: {type: "json_object"}` (OpenAI's JSON-mode convention) is actually honored by Groq's endpoint at build time — it's an OpenAI-compatible API, but compatibility coverage varies by provider; if unsupported, fall back to instructing strict JSON in the system prompt and parsing defensively (the way `src/lib/hud-reo.ts` already parses an external API's response shape).
+
+**Prompt design:** system prompt should state the buyer criteria (price range, target areas/states, property types from the `buyers` table — if there are multiple buyers, pass all of them and ask for a best-fit score against any) and ask for a JSON object mapping each listing's `caseNum` to `{score: 0-100, reason: "<one short sentence>"}`. Give the model the address/city/state/zip/case number for each listing — no price/beds/baths available (HUD's data doesn't have those, see [§6](#6-api-reference)), so scoring is necessarily based on location match + whatever's in the case metadata, not property specifics. Say this limitation plainly in the system prompt so the model doesn't fabricate property details it wasn't given.
+
+**Batching — stay well inside the free tier:**
+- ~600 listings ÷ ~40 per request ≈ 15 requests per full triage run. The 70B model's free tier allows 1,000 requests/day — a user could run a full triage ~65 times a day before hitting the ceiling. No special rate-limit handling needed beyond a clear error message on a 429 (Groq returns standard HTTP 429 on rate-limit); don't build a retry/queue system for this — it's unnecessary complexity for headroom this large.
+- Send the whole batch's listings as a single JSON user-message, not 40 separate messages — keeps it to one request per batch of ~40, not one request per listing (which would be 600 requests, still under the daily cap but pointlessly chatty and slower for the user).
+
+**UI integration — `HudLeadsView.tsx`:**
+- Button triggers `POST /api/hud-triage` with the currently-filtered `listings` array (respect the existing state/search filters already in that component — don't re-score everything if the user has already narrowed it down).
+- On response, store scores keyed by `caseNum`, add a "Match" column showing the score + a tooltip/expandable reason, default-sort the table by score descending once triage has run.
+- Loading state while the batched requests run (this will take several seconds for ~15 sequential/parallel requests — show progress if straightforward, but a simple spinner is fine for a first version).
+- Error state: show Groq's error message plainly (e.g. rate limit, auth failure) — don't silently fail. This is a Tier-3/optional feature; the existing "Add to CRM" flow must keep working even if triage errors out entirely.
+
+**Explicitly out of scope for this TODO** (don't scope-creep into these while building it):
+- No ARV/repair-cost/MAO assistant — flagged in [§11](#11-external-integrations) as a bad fit for a free/smaller model given the financial stakes; a separate decision if ever built.
+- No call transcription — that's a speech-to-text task (Whisper-class models), not a Groq chat-completion task; different tooling entirely, not covered by this TODO even though Groq also happens to host Whisper.
+- No persistence of scores — this is a live, on-demand triage each time the button is clicked, consistent with `/hud-leads` already being read-only/non-cached by design (see [§10](#10-key-components)). Don't add a database table for this without being asked.
+
+**Verification plan for whoever builds this** (same discipline as everything else in this doc — see [§7](#7-application-architecture) and the Changelog): once `GROQ_API_KEY` is set, test the real Groq endpoint directly with `curl` first to confirm the request/response shape before wiring up the route (same approach used to verify Repliers/HUD in this codebase). Then drive the actual button click in a real browser — a `curl`-only check of the API route would miss whether the UI's loading/error/sort states actually work.
+
+---
+
+*Last updated: 2026-10-27*
