@@ -11,6 +11,7 @@ const TABS = [
   { href: '/letters', label: '✉️ Letters' }, { href: '/buyers', label: '🏦 Buyers' },
   { href: '/import', label: '⬆️ Import' }, { href: '/property-search', label: '🔍 Search' },
   { href: '/hud-leads', label: '🏛️ HUD Leads' },
+  { href: '/assistant', label: '💬 Assistant' },
   { href: '/settings', label: '⚙️ Settings' },
 ]
 

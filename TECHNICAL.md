@@ -351,6 +351,15 @@ Body: `{ listings: TriageListing[] }` — the caller sends the listings to score
 
 ---
 
+### AI Assistant
+
+#### `POST /api/assistant`
+Body: `{ messages: ChatMessage[] }` — the full conversation so far (user/assistant text turns only; see [§10](#10-key-components) for why). Prepends the system prompt, runs Groq's tool-calling loop internally (up to 5 rounds — see [§11](#11-external-integrations)) against the tools in `src/lib/assistant-tools.ts`, and returns only the final `{ message }` once the model stops requesting tool calls. The intermediate tool-call/tool-result turns are never returned to or stored by the client — each new question re-triggers fresh tool calls server-side rather than the assistant trusting remembered results.
+
+`422` if `messages` is empty/missing. `502` if Groq errors (after its one retry) or the loop hits the 5-round cap without finishing.
+
+---
+
 ### Zapier Notification
 
 #### `POST /api/notify-zap`
@@ -447,6 +456,8 @@ There is deliberately no anon-key client anywhere in the browser bundle.
 | `/buyers` | `BuyersView` | Buyer/investor directory |
 | `/import` | `ImportView` | Bulletproof CSV import with preview + column mapping |
 | `/property-search` | `PropertySearchView` | Search an address via Repliers, Add to CRM |
+| `/hud-leads` | `HudLeadsView` | Browse HUD REO listings, AI-rank by buyer fit, Add to CRM |
+| `/assistant` | `AssistantView` | Chat with real CRM data via AI tool calling |
 | `/settings` | `SettingsView` | Sender info, Google Sheets sync, letter templates |
 
 ### Money Partners Module
@@ -546,6 +557,12 @@ Mail merge for 6 letter types: probate owner/lawfirm, foreclosure owner/lawfirm,
 
 **🤖 Rank by Buyer Fit** button: sends the currently-*filtered* listings (respects the search/state filters already applied — doesn't re-score everything if the user narrowed it down first) to `POST /api/hud-triage`, which scores them against every row in the `buyers` table using Groq (`src/lib/groq.ts` — see [§11](#11-external-integrations) for the model/provider details and the real rate-limit retry logic). Scores render as a color-coded badge (green ≥60, amber ≥30, gray below) with the model's one-line reasoning on hover, and the table re-sorts by score descending once a triage has run. Fails gracefully with a clear error if there are no buyers configured yet, or if Groq errors out — "Add to CRM" keeps working either way; this feature is additive, never load-bearing.
 
+### `AssistantView.tsx` — chat with real CRM data via tool calling
+
+`/assistant`: a chat UI backed by `POST /api/assistant` (see [§6](#6-api-reference)). Unlike HUD triage's single-shot call, this is a genuine multi-turn tool-calling loop — the model can call `search_properties`/`get_property` (defined in `src/lib/assistant-tools.ts`, real Supabase queries, not fake data) to ground its answers in actual CRM data, and the route loops (execute tool → send result back → repeat) until the model stops requesting tools and gives a final answer. The system prompt explicitly forbids inventing facts not returned by a tool call — verified directly: asked about a nonexistent address and a state with zero matching leads, got honest "not found" / "you have none" answers both times, not fabricated ones.
+
+Client only ever sends/stores clean user/assistant text — the intermediate tool-call exchange lives and dies within one server request, so every new question re-triggers fresh tool calls rather than trusting something the assistant "remembers." Verified this doesn't break follow-up questions: "How many total leads?" → "6", then "What about just in Colorado?" (no mention of 'leads' at all) correctly re-ran the search with a Colorado filter and answered "1" — both numbers confirmed against the real database, not just plausible-sounding.
+
 ---
 
 ## 11. External Integrations
@@ -612,7 +629,7 @@ Configure a published Google Sheets CSV URL in `/settings`. The CRM fetches it a
 
 No public API. `zillowUrl()` in `lib/utils.ts` builds `https://www.zillow.com/homes/<encoded address>_rb/` — Zillow's own site-search URL pattern, used unofficially (not guaranteed stable, no SLA). Curl-testing this pattern returns a `403` due to Zillow's bot detection blocking non-browser requests — that's expected and doesn't indicate the link is broken for a real person clicking it in an actual browser. Redfin and Realtor.com were considered and rejected for the same treatment: neither has an address-to-listing URL pattern that doesn't require hitting a non-public internal API first.
 
-### Groq (AI — HUD triage built; chatbot next)
+### Groq (AI — HUD triage + chat assistant, both built)
 
 Chosen specifically because this project has **no budget for paid AI APIs**. Checked three options live before picking this one:
 
@@ -630,7 +647,13 @@ Chosen specifically because this project has **no budget for paid AI APIs**. Che
 - **`reasoning_effort: "low"`** cut this model's reasoning-token overhead ~4x on the scoring task (172 → 44 tokens, measured) with no visible quality loss — worth trying on any new Groq prompt before assuming you need more budget.
 - `response_format: {"type": "json_object"}` is honored, but `message.content` is still a JSON *string* — always `JSON.parse()` it, the API never hands you a parsed object.
 - No SLA on the free tier — every Groq-powered feature in this app must degrade gracefully (clear loading/error states) and never block a core CRM action.
-- Quality tradeoff, stated plainly: this model is noticeably behind Claude on nuanced reasoning. Fine for classification/ranking (HUD triage). **Do not** use it for anything with real financial-estimation stakes (e.g. an ARV/repair-cost/MAO assistant) without explicitly accepting that tradeoff first — a wrong number there has real consequences.
+- Quality tradeoff, stated plainly: this model is noticeably behind Claude on nuanced reasoning. Fine for classification/ranking (HUD triage) and grounded Q&A (the assistant). **Do not** use it for anything with real financial-estimation stakes (e.g. an ARV/repair-cost/MAO assistant) without explicitly accepting that tradeoff first — a wrong number there has real consequences.
+
+**Tool calling (the assistant, `/api/assistant`) — two things that only showed up under real use:**
+- **`finish_reason: "tool_calls"` instead of `"stop"`, and `message.content` is absent entirely** when the model wants to call a function — the response only has a `tool_calls` array. Code that only checks `content` will silently break on this; `groqChat()` in `lib/groq.ts` returns both `message` and `finishReason` so the caller has to look at `finishReason` explicitly.
+- **Groq validates tool-call arguments against your JSON Schema server-side, before your code ever runs — and rejects the whole call with a 400 if it doesn't match.** Confirmed directly: the model called `search_properties` with `{"state": null, "status": null}` for filters it wasn't using (explicit `null`, not omitted keys), which a plain `{"type": "string"}` schema doesn't permit — `400 tool_use_failed`. Fixed by allowing a type union, `{"type": ["string", "null"]}`, on every optional parameter in `assistant-tools.ts`. If a new tool gets added with optional string/number parameters, give them this treatment up front rather than rediscovering the same failure.
+- **Models don't deeply cross-check structured tool results against each other** — handed it a deliberately inconsistent fake result (a `count` field that didn't match the addresses actually listed) during testing, and it trusted the count without noticing the mismatch. Not a bug for this app (a real Supabase query guarantees `count === array.length` always), but a reason to be careful about what you compute server-side and hand the model — don't rely on it to catch an inconsistency in your own data.
+- The loop itself (`/api/assistant`): send `messages` + `tools` → if `finishReason === 'tool_calls'`, execute every call in `message.tool_calls`, append one `{role: 'tool', tool_call_id, content}` message per call, call again → repeat until `finishReason === 'stop'`. A 5-round cap guards against a runaway loop; normal questions resolve in 1–2 rounds.
 
 ---
 
@@ -713,6 +736,10 @@ git push origin main
 ## 14. Changelog
 
 Notable shipped work, newest first. Not every commit — just things worth a future reader knowing happened.
+
+### 2026-10-28 — AI chat assistant shipped (Groq, tool calling)
+
+`/assistant`: conversational access to real CRM data via `search_properties`/`get_property` tools (`src/lib/assistant-tools.ts`), `POST /api/assistant` running Groq's tool-calling loop (see [§11](#11-external-integrations)). Two real failures found and fixed during build, same discipline as the triage feature: Groq's server-side JSON Schema validation rejected a tool call outright because the model sent explicit `null` for unused optional filters against a plain `{"type": "string"}` schema — fixed with a `["string", "null"]` type union on every optional parameter. Separately, confirmed (deliberately, with a fabricated inconsistent test payload) that the model does not deeply cross-check a tool result's fields against each other — it trusted a `count` that didn't match the listed items. Verified multi-turn behavior for real: "How many total leads?" → 6, then "What about just in Colorado?" (no restatement of "leads") correctly re-ran the search with a state filter and answered 1 — both numbers checked against the actual database. Also verified it refuses to fabricate on a nonexistent address and a zero-result state query, exactly per the system prompt's instruction.
 
 ### 2026-10-28 — AI HUD triage shipped (Groq, free tier)
 

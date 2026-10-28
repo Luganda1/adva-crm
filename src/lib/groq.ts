@@ -13,6 +13,63 @@ const GROQ_CHAT_URL = 'https://api.groq.com/openai/v1/chat/completions'
 // "model_not_found", re-check https://console.groq.com for what's current.
 const MODEL = 'openai/gpt-oss-120b'
 
+// --- Generic chat primitive, used by the assistant's tool-calling loop ---
+// (separate from rankHudListingsBatch below, which is a single-shot,
+// no-conversation, structured-JSON call — a different shape of problem.)
+
+export interface ChatMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool'
+  content?: string | null
+  tool_calls?: { id: string; type: 'function'; function: { name: string; arguments: string } }[]
+  tool_call_id?: string
+}
+
+export interface GroqToolDef {
+  type: 'function'
+  function: { name: string; description: string; parameters: Record<string, unknown> }
+}
+
+// One request/response turn — does NOT loop on tool_calls itself. The caller
+// (the assistant route) owns the loop: check finish_reason, execute any
+// tool_calls, append results, call this again. Keeping the loop out of this
+// function is deliberate — it's the orchestration layer's job, not the raw
+// API client's.
+export async function groqChat(messages: ChatMessage[], tools?: GroqToolDef[], _retried = false): Promise<{
+  message: ChatMessage
+  finishReason: string
+}> {
+  const apiKey = process.env.GROQ_API_KEY
+  if (!apiKey) throw new Error('GROQ_API_KEY not configured')
+
+  const res = await fetch(GROQ_CHAT_URL, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: MODEL,
+      reasoning_effort: 'low',
+      messages,
+      ...(tools ? { tools } : {}),
+    }),
+  })
+
+  if (res.status === 429 && !_retried) {
+    const body = await res.text().catch(() => '')
+    const waitSeconds = parseRetryAfterSeconds(body)
+    await new Promise(resolve => setTimeout(resolve, waitSeconds * 1000))
+    return groqChat(messages, tools, true) // one retry only, same rule as rankHudListingsBatch below
+  }
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    throw new Error(`Groq API error ${res.status}: ${body}`)
+  }
+
+  const data = await res.json()
+  const choice = data.choices?.[0]
+  if (!choice) throw new Error('Groq response missing choices')
+  return { message: choice.message, finishReason: choice.finish_reason }
+}
+
 export interface TriageListing {
   caseNum: string
   address: string
