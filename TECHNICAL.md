@@ -732,6 +732,17 @@ git push origin main
 
 Notable shipped work, newest first. Not every commit — just things worth a future reader knowing happened.
 
+### 2026-10-28 — Dark animated hero on the landing page
+
+Replaced the landing page's hero section (badge/headline/CTAs only — everything below it, and `/about`/`/services`, are unchanged and stay the existing light/orange theme) with a dark, animated-gradient hero: `src/components/marketing/Hero.tsx`.
+
+- Near-black background (`#090D10`) with layered teal/coral radial glows and a faint grid, all in a `pointer-events-none` decorative layer behind the nav and content.
+- Oversized "PIPELINE" headline (Montserrat 900, `clamp()`-sized) with a continuously moving white→teal gradient via `background-clip: text` + a CSS `@keyframes` animation — letters never move, only the color band traveling through them. Respects `prefers-reduced-motion` (animation stops, shows a static mid-gradient frame) and has a plain-color fallback under `@supports not (background-clip: text)`.
+- `MarketingNav` gained a `variant="dark"` prop (used only here) so `/about`/`/services` keep the original light nav — one component, not a forked copy.
+- All CSS tokens (colors, grid size, animation duration) live under a scoped `.hero-dark { --hero-*: ... }` block in `globals.css`, not global `:root`, so they can't leak into the rest of the site's styling.
+- No promotional sticky-note annotation — there's no real current promo to show, so it was left out rather than inventing one (there's a comment in `Hero.tsx` showing how to add one later if that changes).
+- Verified at 375/768/1024/1440px (no horizontal overflow at any width), reduced-motion, keyboard focus visibility, single-`h1` check, zero console errors, and the full login/redirectTo/sign-out flow still working through the new hero's CTAs — all via Playwright.
+
 ### 2026-10-28 — Logged-out visitors land on the marketing page; About/Services pages; redesigned nav
 
 Follow-up to the auth work below, same day. Three changes:

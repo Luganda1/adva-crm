@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Open+Sans:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&family=Open+Sans:wght@400;500;600&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -84,6 +84,60 @@ body { font-family: 'Open Sans', sans-serif; background: #F7F7F7; color: var(--c
   .check-chip { @apply inline-flex items-center gap-1.5 text-sm cursor-pointer bg-gray-100 px-3 py-1.5 rounded-md border border-gray-200 font-normal transition-all; }
   .check-chip:has(input:checked) { background: var(--orange-light); border-color: var(--orange); color: var(--orange-dark); }
   @keyframes pulse { 0%,100%{opacity:1}50%{opacity:.4} }
+
+  /* Dark hero (src/components/marketing/Hero.tsx) — scoped variables so
+     these tokens don't leak into the rest of the (light, orange-branded)
+     site. Edit colors/timing here; component markup stays untouched. */
+  .hero-dark {
+    --hero-bg: #090D10;
+    --hero-grid-line: rgba(255,255,255,.04);
+    --hero-grid-size: 80px;
+    --hero-g1: #F5FFFF; --hero-g2: #C7E8EC; --hero-g3: #77C7CD; --hero-g4: #2FAAB3; --hero-g5: #08747D;
+    --hero-anim-duration: 5s;
+    --hero-cta-primary: #C63E43;
+    --hero-cta-primary-dark: #A5343A;
+  }
+  .hero-grid-bg {
+    background-image:
+      linear-gradient(to right, var(--hero-grid-line) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--hero-grid-line) 1px, transparent 1px);
+    background-size: var(--hero-grid-size) var(--hero-grid-size);
+  }
+  /* The moving-light headline effect: a palindromic gradient (same color at
+     0% and 100%) animated by exactly 2x its own background-size in one
+     direction. That travel distance being an exact multiple of the tile
+     width is what makes the loop restart invisible — frame 0 and the final
+     frame are pixel-identical, so there's nothing to "snap" across. */
+  .hero-headline {
+    background-image: linear-gradient(90deg,
+      var(--hero-g5) 0%, var(--hero-g4) 12%, var(--hero-g3) 24%, var(--hero-g2) 36%, var(--hero-g1) 50%,
+      var(--hero-g2) 64%, var(--hero-g3) 76%, var(--hero-g4) 88%, var(--hero-g5) 100%);
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: hero-shine var(--hero-anim-duration) linear infinite;
+  }
+  /* Readable static fallback wherever text background-clip isn't supported. */
+  @supports not (background-clip: text) {
+    .hero-headline { background: none; color: var(--hero-g3); animation: none; }
+  }
+  .hero-btn-primary { background: var(--hero-cta-primary); color: #fff; box-shadow: 0 8px 28px -6px rgba(198,62,67,.55); }
+  .hero-btn-primary:hover { background: var(--hero-cta-primary-dark); transform: translateY(-1px); }
+  .hero-btn-secondary { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.14); color: #fff; }
+  .hero-btn-secondary:hover { background: rgba(255,255,255,.1); border-color: rgba(255,255,255,.28); transform: translateY(-1px); }
+  .hero-btn-primary, .hero-btn-secondary { transition: background-color .18s ease, border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
+  .hero-btn-primary:focus-visible, .hero-btn-secondary:focus-visible, .hero-nav-link:focus-visible {
+    outline: 2px solid var(--hero-g2); outline-offset: 2px;
+  }
+  .hero-nav-link:hover { color: #fff !important; }
+}
+@keyframes hero-shine {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-headline { animation: none; background-position: 38% 0; }
 }
 @media (max-width: 600px) { .form-row { @apply grid-cols-1; } }
 ::-webkit-scrollbar { width: 6px; height: 6px; }

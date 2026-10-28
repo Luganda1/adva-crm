@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import MarketingNav from '@/components/marketing/MarketingNav'
+import Hero from '@/components/marketing/Hero'
 import MarketingFooter from '@/components/marketing/MarketingFooter'
 import { FEATURES, STEPS } from '@/lib/marketing-content'
 
@@ -19,32 +19,7 @@ export default async function LandingPage({ searchParams }: { searchParams: Prom
 
   return (
     <div className="relative overflow-hidden" style={{ background: 'var(--gray-light)' }}>
-      {/* Soft brand-colored glow behind the hero — pure CSS, no imagery */}
-      <div className="pointer-events-none absolute -top-40 left-1/2 -translate-x-1/2 w-[900px] h-[900px] rounded-full blur-3xl opacity-[0.16]"
-        style={{ background: 'radial-gradient(circle, var(--orange) 0%, transparent 70%)' }} />
-
-      <MarketingNav loginHref={loginHref} />
-
-      <section className="relative max-w-4xl mx-auto px-6 pt-20 pb-12 text-center">
-        <span className="badge inline-block mb-5" style={{ background: 'var(--orange-light)', color: 'var(--orange-dark)' }}>
-          Built for wholesaling teams
-        </span>
-        <h1 className="font-heading font-bold text-4xl sm:text-5xl leading-tight mb-5" style={{ color: 'var(--charcoal)' }}>
-          Run your real estate wholesaling{' '}
-          <span style={{
-            background: 'linear-gradient(135deg, var(--orange), var(--orange-dark))',
-            WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent',
-          }}>pipeline</span> in one place
-        </h1>
-        <p className="text-lg mb-8 max-w-2xl mx-auto leading-relaxed" style={{ color: 'var(--gray)' }}>
-          Leads, properties, money partners, and an AI assistant that helps your team triage and work deals faster —
-          built for small wholesaling teams, not enterprise sales orgs.
-        </p>
-        <div className="flex items-center justify-center gap-3 flex-wrap">
-          <Link href={loginHref} className="btn btn-primary text-base px-6 py-3">Sign in to your CRM →</Link>
-          <Link href="/services" className="btn btn-outline text-base px-6 py-3">See what's inside</Link>
-        </div>
-      </section>
+      <Hero loginHref={loginHref} />
 
       {/* Product preview — an illustrative mockup of the real lead list and
           its actual status colors, not a stock photo or a fabricated metric */}
