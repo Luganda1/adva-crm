@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useMemo } from 'react'
 import { useMP } from '@/contexts/MPContext'
+import SignOutButton from '@/components/SignOutButton'
 
 const TABS = [
   { href: '/money-partners', label: 'All Partners' },
@@ -35,6 +36,7 @@ export default function MPChrome({ children }: { children: React.ReactNode }) {
             <span className={`w-2 h-2 rounded-full ${syncStatus === 'on' ? 'bg-green-400' : 'bg-yellow-300 animate-pulse'}`} />
             <span className="text-xs" style={{ color: 'rgba(255,255,255,.6)' }}>{syncLabel}</span>
           </div>
+          <SignOutButton className="text-sm no-underline" style={{ color: 'rgba(255,255,255,.85)' }} />
         </div>
       </header>
 

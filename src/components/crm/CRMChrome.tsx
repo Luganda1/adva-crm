@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useMemo } from 'react'
 import { useCRM } from '@/contexts/CRMContext'
+import SignOutButton from '@/components/SignOutButton'
 
 const TABS = [
   { href: '/leads', label: 'All Leads' }, { href: '/followup', label: 'Follow-up' },
@@ -41,6 +42,7 @@ export default function CRMChrome({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--gray)' }}>
             <span className={`sync-dot ${syncStatus}`} /><span>{syncLabel}</span>
           </div>
+          <SignOutButton className="text-xs border border-gray-200 px-3 py-1.5 rounded-lg transition-colors hover:border-brand hover:text-brand" style={{ color: 'var(--gray)' }} />
         </div>
       </header>
 

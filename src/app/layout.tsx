@@ -1,31 +1,16 @@
 import type { Metadata } from 'next'
-import { serverSupabase } from '@/lib/supabase-server'
-import AppShell from '@/components/AppShell'
 import './globals.css'
-import type { Property, Partner, Buyer, MoneyPartner } from '@/types'
-
-export const dynamic = 'force-dynamic'
 
 export const metadata: Metadata = { title: 'ADVA Leads CRM', description: 'Real estate lead management' }
 
-export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const db = serverSupabase()
-  const [{ data: properties }, { data: partners }, { data: buyers }, { data: mpPartners }] = await Promise.all([
-    db.from('properties').select('*').order('created_at', { ascending: false }),
-    db.from('partners').select('*').order('name'),
-    db.from('buyers').select('*').order('created_at', { ascending: false }),
-    db.from('money_partners').select('*').order('created_at', { ascending: false }),
-  ])
+// Minimal root layout — html/body/metadata only. The old version of this
+// file unconditionally fetched all CRM data and wrapped everything in
+// AppShell, which is wrong for a public landing page and /login. That logic
+// now lives in (app)/layout.tsx, gated behind an auth check.
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>
-        <AppShell
-          initialProperties={(properties as Property[]) || []}
-          initialPartners={(partners as Partner[]) || []}
-          initialBuyers={(buyers as Buyer[]) || []}
-          initialMPPartners={(mpPartners as MoneyPartner[]) || []}
-        >{children}</AppShell>
-      </body>
+      <body>{children}</body>
     </html>
   )
 }
