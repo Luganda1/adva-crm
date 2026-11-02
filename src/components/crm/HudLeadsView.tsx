@@ -148,8 +148,8 @@ export default function HudLeadsView() {
               <table className="w-full text-sm" style={{ borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                    {['Match', 'Address', 'City', 'State', 'Zip', 'Case #', 'Acquired', '', ''].map(h => (
-                      <th key={h} className="text-left px-3.5 py-2.5 text-xs font-bold uppercase tracking-wide whitespace-nowrap" style={{ color: 'var(--gray)' }}>{h}</th>
+                    {['Match', 'Address', 'City', 'State', 'Zip', 'Case #', 'Acquired', '', ''].map((h, i) => (
+                      <th key={`${h}-${i}`} className="text-left px-3.5 py-2.5 text-xs font-bold uppercase tracking-wide whitespace-nowrap" style={{ color: 'var(--gray)' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
