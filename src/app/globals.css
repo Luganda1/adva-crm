@@ -95,7 +95,7 @@ body { font-family: 'Open Sans', sans-serif; background: #F7F7F7; color: var(--c
     --hero-grid-line: rgba(255,255,255,.04);
     --hero-grid-size: 80px;
     --hero-g1: #F5FFFF; --hero-g2: #C7E8EC; --hero-g3: #77C7CD; --hero-g4: #2FAAB3; --hero-g5: #08747D;
-    --hero-anim-duration: 5s;
+    --hero-anim-duration: 9s;
     --hero-cta-primary: #C63E43;
     --hero-cta-primary-dark: #A5343A;
   }
@@ -109,10 +109,10 @@ body { font-family: 'Open Sans', sans-serif; background: #F7F7F7; color: var(--c
     --hero-bg: var(--gray-light);
     --hero-grid-line: rgba(44,44,44,.06);
     --hero-grid-size: 80px;
-    --hero-g1: #08747D; --hero-g2: #2FAAB3; --hero-g3: #77C7CD; --hero-g4: #2FAAB3; --hero-g5: #77C7CD;
-    --hero-anim-duration: 5s;
-    --hero-cta-primary: #C63E43;
-    --hero-cta-primary-dark: #A5343A;
+    --hero-g1: #08747D; --hero-g2: #2FAAB3; --hero-g4: #2FAAB3;  --hero-g3: #77C7CD; --hero-g5: #77C7CD;
+    --hero-anim-duration: 30s;
+    --hero-cta-primary: var(--orange);
+    --hero-cta-primary-dark: var(--orange-dark);
   }
   .hero-light .hero-btn-secondary { background: rgba(44,44,44,.04); border: 1px solid rgba(44,44,44,.14); color: var(--charcoal); }
   .hero-light .hero-btn-secondary:hover { background: rgba(44,44,44,.07); border-color: rgba(44,44,44,.28); }
@@ -128,7 +128,7 @@ body { font-family: 'Open Sans', sans-serif; background: #F7F7F7; color: var(--c
      width is what makes the loop restart invisible — frame 0 and the final
      frame are pixel-identical, so there's nothing to "snap" across. */
   .hero-headline {
-    background-image: linear-gradient(90deg,
+    background-image: linear-gradient(-45deg,
       var(--hero-g5) 0%, var(--hero-g4) 12%, var(--hero-g3) 24%, var(--hero-g2) 36%, var(--hero-g1) 50%,
       var(--hero-g2) 64%, var(--hero-g3) 76%, var(--hero-g4) 88%, var(--hero-g5) 100%);
     background-size: 200% 100%;
@@ -141,7 +141,7 @@ body { font-family: 'Open Sans', sans-serif; background: #F7F7F7; color: var(--c
   @supports not (background-clip: text) {
     .hero-headline { background: none; color: var(--hero-g3); animation: none; }
   }
-  .hero-btn-primary { background: var(--hero-cta-primary); color: #fff; box-shadow: 0 8px 28px -6px rgba(198,62,67,.55); }
+  .hero-btn-primary { background: var(--hero-cta-primary); color: #fff; box-shadow: 0 8px 28px -6px var(--orange-dark); }
   .hero-btn-primary:hover { background: var(--hero-cta-primary-dark); transform: translateY(-1px); }
   .hero-btn-secondary { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.14); color: #fff; }
   .hero-btn-secondary:hover { background: rgba(255,255,255,.1); border-color: rgba(255,255,255,.28); transform: translateY(-1px); }

@@ -92,9 +92,6 @@ export default function Hero({ loginHref, tone = 'dark' }: Props) {
 
           <div className="relative inline-block">
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-              <Link href="/services" className="hero-btn-secondary flex items-center justify-center h-14 px-7 rounded-full text-sm font-semibold font-heading no-underline w-full sm:w-auto">
-                See what's inside
-              </Link>
               <Link href={loginHref} className="hero-btn-primary flex items-center justify-center h-14 px-7 rounded-full text-sm font-semibold font-heading no-underline w-full sm:w-auto">
                 Sign in to your CRM →
               </Link>
