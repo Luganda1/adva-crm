@@ -8,6 +8,7 @@ import Script from 'next/script'
 import { useEffect } from 'react'
 import CRMChrome from './crm/CRMChrome'
 import MPChrome from './money-partners/MPChrome'
+import FloatingAssistant from './crm/FloatingAssistant'
 
 const MAPS_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY || ''
 const GMAP_CALLBACK = '__gmapReady__'
@@ -45,6 +46,7 @@ export default function AppShell({ children, initialProperties, initialPartners,
       <CRMProvider initialProperties={initialProperties} initialPartners={initialPartners} initialBuyers={initialBuyers}>
         <MPProvider initialPartners={initialMPPartners}>
           {isMP ? <MPChrome>{children}</MPChrome> : <CRMChrome>{children}</CRMChrome>}
+          <FloatingAssistant />
         </MPProvider>
       </CRMProvider>
     </>
