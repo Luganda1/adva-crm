@@ -85,9 +85,11 @@ body { font-family: 'Open Sans', sans-serif; background: #F7F7F7; color: var(--c
   .check-chip:has(input:checked) { background: var(--orange-light); border-color: var(--orange); color: var(--orange-dark); }
   @keyframes pulse { 0%,100%{opacity:1}50%{opacity:.4} }
 
-  /* Dark hero (src/components/marketing/Hero.tsx) — scoped variables so
-     these tokens don't leak into the rest of the (light, orange-branded)
-     site. Edit colors/timing here; component markup stays untouched. */
+  /* Hero (src/components/marketing/Hero.tsx) — scoped variables so these
+     tokens don't leak into the rest of the (light, orange-branded) site.
+     Edit colors/timing here; component markup stays untouched.
+     Two tones, same component: .hero-dark (near-black, light-peak gradient,
+     original) and .hero-light (inverted — light bg, dark-peak gradient). */
   .hero-dark {
     --hero-bg: #090D10;
     --hero-grid-line: rgba(255,255,255,.04);
@@ -97,6 +99,23 @@ body { font-family: 'Open Sans', sans-serif; background: #F7F7F7; color: var(--c
     --hero-cta-primary: #C63E43;
     --hero-cta-primary-dark: #A5343A;
   }
+  /* Inverted tone: same 5 colors, roles swapped. In .hero-dark the gradient's
+     peak (center of the sweep) is --hero-g1 (near-white) and its resting
+     edges are --hero-g5 (deep teal) — right for light-on-dark. Here that's
+     flipped: the peak is the deep/saturated end (reads clearly on a light
+     background) and the resting edges sit at a mid turquoise rather than
+     white, which would otherwise wash out against a light background. */
+  .hero-light {
+    --hero-bg: var(--gray-light);
+    --hero-grid-line: rgba(44,44,44,.06);
+    --hero-grid-size: 80px;
+    --hero-g1: #08747D; --hero-g2: #2FAAB3; --hero-g3: #77C7CD; --hero-g4: #2FAAB3; --hero-g5: #77C7CD;
+    --hero-anim-duration: 5s;
+    --hero-cta-primary: #C63E43;
+    --hero-cta-primary-dark: #A5343A;
+  }
+  .hero-light .hero-btn-secondary { background: rgba(44,44,44,.04); border: 1px solid rgba(44,44,44,.14); color: var(--charcoal); }
+  .hero-light .hero-btn-secondary:hover { background: rgba(44,44,44,.07); border-color: rgba(44,44,44,.28); }
   .hero-grid-bg {
     background-image:
       linear-gradient(to right, var(--hero-grid-line) 1px, transparent 1px),

@@ -22,9 +22,26 @@ const REASSURANCE = 'No per-seat pricing, no sales calls — just your team acco
 // (position: absolute, rotate(8deg), bright yellow bg, dark text, thin white
 // border) plus an inline SVG curved arrow pointing at the primary button.
 
-export default function Hero({ loginHref }: { loginHref: string }) {
+// Two tones sharing one layout: "dark" is the original (near-black bg, light
+// gradient peak); "light" inverts it (light bg, dark gradient peak — see the
+// .hero-light block in globals.css for the color-role swap). Switch which
+// one renders by changing the `tone` prop passed from app/page.tsx.
+interface Props {
+  loginHref: string
+  tone?: 'dark' | 'light'
+}
+
+export default function Hero({ loginHref, tone = 'dark' }: Props) {
+  const dark = tone === 'dark'
+  const toneClass = dark ? 'hero-dark' : 'hero-light'
+  const textStrong = dark ? 'rgba(255,255,255,.85)' : 'var(--charcoal)'
+  const textMuted = dark ? 'rgba(255,255,255,.55)' : 'var(--gray)'
+  const textFaint = dark ? 'rgba(255,255,255,.4)' : 'var(--gray)'
+  const badgeBg = dark ? 'rgba(255,255,255,.06)' : 'rgba(44,44,44,.04)'
+  const badgeBorder = dark ? '1px solid rgba(255,255,255,.14)' : '1px solid rgba(44,44,44,.14)'
+
   return (
-    <section className="hero-dark relative overflow-hidden" style={{ background: 'var(--hero-bg)' }}>
+    <section className={`${toneClass} relative overflow-hidden`} style={{ background: 'var(--hero-bg)' }}>
       {/* Decorative layers only — never intercepts clicks, never clips nav
           dropdowns or focus rings (those live in the sibling content layer). */}
       <div className="pointer-events-none absolute inset-0" aria-hidden="true">
@@ -38,11 +55,11 @@ export default function Hero({ loginHref }: { loginHref: string }) {
       </div>
 
       <div className="relative z-10">
-        <MarketingNav variant="dark" loginHref={loginHref} />
+        <MarketingNav loginHref={loginHref} variant={dark ? 'dark' : 'light'} />
 
         <div className="max-w-[1160px] mx-auto px-6 pt-20 sm:pt-28 md:pt-36 pb-16 text-center">
           <span className="hero-badge inline-flex items-center gap-2 mb-8 px-4 py-2 rounded-full text-[12px] sm:text-[13px] font-bold uppercase tracking-[0.12em] font-heading"
-            style={{ background: 'rgba(255,255,255,.06)', border: '1px solid rgba(255,255,255,.14)', color: 'rgba(255,255,255,.85)' }}>
+            style={{ background: badgeBg, border: badgeBorder, color: textStrong }}>
             <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--hero-cta-primary)' }} aria-hidden="true" />
             {EYEBROW}
           </span>
@@ -60,14 +77,14 @@ export default function Hero({ loginHref }: { loginHref: string }) {
 
           <ul className="flex flex-wrap items-center justify-center gap-x-7 gap-y-3 mb-3 list-none">
             {FEATURES_ROW_1.map(f => (
-              <li key={f.label} className="flex items-center gap-2 text-[13px] sm:text-sm" style={{ color: 'rgba(255,255,255,.55)' }}>
+              <li key={f.label} className="flex items-center gap-2 text-[13px] sm:text-sm" style={{ color: textMuted }}>
                 <span className="text-lg sm:text-xl" aria-hidden="true">{f.icon}</span>{f.label}
               </li>
             ))}
           </ul>
           <ul className="flex flex-wrap items-center justify-center gap-x-7 gap-y-3 mb-10 list-none">
             {FEATURES_ROW_2.map(f => (
-              <li key={f.label} className="flex items-center gap-2 text-[13px] sm:text-sm" style={{ color: 'rgba(255,255,255,.55)' }}>
+              <li key={f.label} className="flex items-center gap-2 text-[13px] sm:text-sm" style={{ color: textMuted }}>
                 <span className="text-lg sm:text-xl" aria-hidden="true">{f.icon}</span>{f.label}
               </li>
             ))}
@@ -84,7 +101,7 @@ export default function Hero({ loginHref }: { loginHref: string }) {
             </div>
           </div>
 
-          <p className="mt-6 text-xs sm:text-sm" style={{ color: 'rgba(255,255,255,.4)' }}>{REASSURANCE}</p>
+          <p className="mt-6 text-xs sm:text-sm" style={{ color: textFaint }}>{REASSURANCE}</p>
         </div>
       </div>
     </section>

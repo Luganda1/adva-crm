@@ -19,7 +19,7 @@ export default async function LandingPage({ searchParams }: { searchParams: Prom
 
   return (
     <div className="relative overflow-hidden" style={{ background: 'var(--gray-light)' }}>
-      <Hero loginHref={loginHref} />
+      <Hero loginHref={loginHref} tone="light" />
 
       {/* Product preview — an illustrative mockup of the real lead list and
           its actual status colors, not a stock photo or a fabricated metric */}
