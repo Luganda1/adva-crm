@@ -1,13 +1,13 @@
 'use client'
-import Script from 'next/script'
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { useRouter } from 'next/navigation'
 import { useCRM } from '@/contexts/CRMContext'
-import { dateInRange, getDateForField, fmtD } from '@/lib/utils'
-import PropertyPanel from './PropertyPanel'
-import AddPropertyModal from './AddPropertyModal'
-import SkipTraceModal from './SkipTraceModal'
+import { useGoogleMapsLoaded } from '@/lib/use-google-maps'
+import { dateInRange, fmtD, getDateForField } from '@/lib/utils'
 import type { Property } from '@/types'
+import { useRouter } from 'next/navigation'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import AddPropertyModal from './AddPropertyModal'
+import PropertyPanel from './PropertyPanel'
+import SkipTraceModal from './SkipTraceModal'
 
 const STATUS_COLORS: Record<string, string> = {
   lead: '#888780', active: '#2E7D4F', probate: '#B07400', foreclosure: '#D63C3C', auction: '#1A6BB8',
@@ -16,13 +16,6 @@ const STATUS_LABELS: Record<string, string> = {
   lead: 'Lead', active: 'Active', probate: 'Probate', foreclosure: 'Foreclosure', auction: 'Auction',
 }
 const MAPS_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY || ''
-
-// Global callback name for Google Maps
-const CALLBACK = '__gmapReady__'
-
-declare global {
-  interface Window { [key: string]: unknown; google: typeof google }
-}
 
 export default function MapView() {
   const { properties, partners } = useCRM()
@@ -38,13 +31,16 @@ export default function MapView() {
   const myLocMarkerRef = useRef<google.maps.Marker | null>(null)
   const openInfoRef = useRef<google.maps.InfoWindow | null>(null)
 
-  const [mapsLoaded, setMapsLoaded] = useState(false)
+  const mapsLoaded = useGoogleMapsLoaded()
   const [mapInitialized, setMapInitialized] = useState(false)
   const [geocoding, setGeocoding] = useState(false)
   const [pinCount, setPinCount] = useState(0)
   const [geocodeMsg, setGeocodeMsg] = useState('')
 
   // Filters
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const [mapSearch, setMapSearch] = useState('')
+  const [searchFocused, setSearchFocused] = useState(false)
   const [checkedStatuses, setCheckedStatuses] = useState<Set<string>>(
     new Set(['lead', 'active', 'probate', 'foreclosure', 'auction'])
   )
@@ -71,8 +67,21 @@ export default function MapView() {
       const d = getDateForField(p, mapDateType)
       if (!dateInRange(d, mapDateRange)) return false
     }
+    if (mapSearch.trim()) {
+      const q = mapSearch.trim().toLowerCase()
+      const txt = [p.address, p.owner_name, p.phone].join(' ').toLowerCase()
+      if (!txt.includes(q)) return false
+    }
     return true
-  }), [properties, checkedStatuses, mapDateType, mapDateRange])
+  }), [properties, checkedStatuses, mapDateType, mapDateRange, mapSearch])
+
+  // When a search narrows it down to exactly one property, open its detail
+  // panel automatically — the map itself already re-fits bounds to whatever
+  // filteredProps contains (see the geocode/render effect below), so a
+  // single match also zooms in on its pin with no extra code needed there.
+  useEffect(() => {
+    if (mapSearch.trim() && filteredProps.length === 1) setActiveId(filteredProps[0].id)
+  }, [mapSearch, filteredProps])
 
   // Initialize map after script loads
   const initMap = useCallback(() => {
@@ -92,14 +101,6 @@ export default function MapView() {
       polylineOptions: { strokeColor: '#E8711A', strokeWeight: 4 },
     })
     setMapInitialized(true)
-  }, [])
-
-  // Set up global callback for Maps script
-  useEffect(() => {
-    window[CALLBACK] = () => {
-      setMapsLoaded(true)
-    }
-    return () => { delete window[CALLBACK] }
   }, [])
 
   // Init map once script loaded
@@ -270,16 +271,35 @@ export default function MapView() {
 
   return (
     <>
-      {MAPS_KEY && (
-        <Script
-          src={`https://maps.googleapis.com/maps/api/js?key=${MAPS_KEY}&libraries=geometry&callback=${CALLBACK}`}
-          strategy="afterInteractive"
-        />
-      )}
-
       <div className="flex gap-2.5 flex-wrap items-start mb-0">
         {/* Left sidebar */}
         <div className="flex flex-col gap-2.5" style={{ width: 256, flexShrink: 0 }}>
+
+          {/* Look up a property */}
+          <div className="bg-white border border-gray-200 rounded-xl p-3.5">
+            <div className="panel-sec-title mb-2">Look up a property</div>
+            <div className="flex gap-1.5">
+              <div className="relative flex-1 min-w-0">
+                {!searchFocused && (
+                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">🔍</span>
+                )}
+                <input ref={searchInputRef} value={mapSearch} onChange={e => setMapSearch(e.target.value)}
+                  onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)}
+                  onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur() }}
+                  placeholder="Address, owner, or phone..."
+                  className={`w-full ${searchFocused ? 'pl-2.5' : 'pl-7'} pr-7 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand`} />
+                {mapSearch && (
+                  <button onClick={() => setMapSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-300 hover:text-red-500 text-xs">✕</button>
+                )}
+              </div>
+              <button className="btn btn-primary btn-sm flex-shrink-0" onClick={() => searchInputRef.current?.blur()}>Search</button>
+            </div>
+            {mapSearch.trim() && (
+              <div className="text-xs mt-1.5" style={{ color: 'var(--gray)' }}>
+                {filteredProps.length === 0 ? 'No match' : filteredProps.length === 1 ? '1 match — zoomed in' : `${filteredProps.length} matches`}
+              </div>
+            )}
+          </div>
 
           {/* Status filter */}
           <div className="bg-white border border-gray-200 rounded-xl p-3.5">

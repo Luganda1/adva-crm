@@ -59,9 +59,15 @@ export default function PropertyPanel({ property: p, partners, onClose, onEdit, 
 
   return (
     <>
-      <div className="flex items-center justify-between px-5 py-3.5 sticky top-0 bg-white z-10" style={{ borderBottom: '1px solid var(--border)' }}>
-        <h2 className="font-heading font-bold text-sm truncate mr-2">{p.address || '(No address)'}</h2>
-        <div className="flex gap-1.5 flex-shrink-0 flex-wrap">
+      <div className="px-5 py-3.5 sticky top-0 bg-white z-10" style={{ borderBottom: '1px solid var(--border)' }}>
+        <div className={`flex items-start gap-2 mb-2.5 ${hasListingData ? 'justify-end' : 'justify-between'}`}>
+          {/* Address moves down into the price/stats block below when there's
+              listing data to anchor it to; with no listing data, there's no
+              block to put it in, so it stays here as the only place it can go. */}
+          {!hasListingData && <h2 className="font-heading font-bold text-sm leading-snug">{p.address || '(No address)'}</h2>}
+          <button className="btn btn-outline btn-sm flex-shrink-0" onClick={onClose}>✕</button>
+        </div>
+        <div className="flex gap-1.5 flex-wrap">
           <button className="btn btn-outline btn-sm" onClick={onEdit}>Edit</button>
           <button className="btn btn-outline btn-sm" onClick={onSkipTrace}>Skip Trace</button>
           <button className="btn btn-outline btn-sm" onClick={handleEnrich} disabled={enrichLoading}>
@@ -70,7 +76,6 @@ export default function PropertyPanel({ property: p, partners, onClose, onEdit, 
           <button className="btn btn-outline btn-sm" onClick={onLetter}>Letter</button>
           <button className="btn btn-outline btn-sm" onClick={onMatch}>Match</button>
           <button className="btn btn-danger btn-sm" onClick={handleDelete}>Delete</button>
-          <button className="btn btn-outline btn-sm" onClick={onClose}>✕</button>
         </div>
       </div>
 
@@ -89,7 +94,8 @@ export default function PropertyPanel({ property: p, partners, onClose, onEdit, 
           </div>
           <div className="px-5 py-4">
             {p.list_price != null && <div className="font-heading font-bold text-2xl leading-none mb-1.5">{fmt$(p.list_price)}</div>}
-            {stats.length > 0 && <div className="text-sm font-medium" style={{ color: 'var(--gray)' }}>{stats.join(' · ')}</div>}
+            {stats.length > 0 && <div className="text-sm font-medium mb-1.5" style={{ color: 'var(--gray)' }}>{stats.join(' · ')}</div>}
+            <div className="font-heading font-semibold text-sm">{p.address || '(No address)'}</div>
           </div>
         </section>
       ) : p.address && (
