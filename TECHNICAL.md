@@ -166,7 +166,7 @@ adva-crm/
 
 ## 5. Database Schema
 
-All tables live in the `public` schema on Supabase (PostgreSQL). Row Level Security is enabled on all four tables — the anon key cannot read or write them; the app never uses the anon key for data access (see [§7](#7-application-architecture)). All four are also added to the `supabase_realtime` publication at the DB level, but nothing in the app currently subscribes to it — the browser polls instead (same reason: RLS blocks Realtime broadcast to the anon role).
+All tables live in the `public` schema on Supabase (PostgreSQL). Row Level Security is enabled on all four tables — the anon key cannot read or write them; the app never uses the anon key for *data* access (see [§7](#7-application-architecture)). The anon key **is** now used in the browser for one narrow purpose — Supabase Auth session management (`lib/supabase-browser.ts`) — which is unrelated to RLS on these four tables; auth has its own internal schema. All four CRM tables are also added to the `supabase_realtime` publication at the DB level, but nothing in the app currently subscribes to it — the browser polls instead (same reason: RLS blocks Realtime broadcast to the anon role).
 
 ### `partners`
 
@@ -382,20 +382,29 @@ Earlier versions of this app had `CRMContext`/`MPContext` call Supabase's **anon
 Browser Request
       │
       ▼
+middleware.ts — refreshes the Supabase session cookie on every request;
+                redirects to /login if no session and the path isn't public
+      │
+      ▼
 Next.js App Router
       │
-      ├─ layout.tsx (server, force-dynamic)
-      │       │  fetches all data via serverSupabase()
+      ├─ (app)/layout.tsx (server, force-dynamic)
+      │       │  redirect('/login') if no user (createAuthServerClient)
+      │       │  fetches all CRM data via serverSupabase()
       │       ▼
       │   AppShell → CRMProvider + MPProvider
       │       │  fetch() to /api/* for every read/write; 20s poll (no Realtime — see above)
       │       ▼
       │   Page Components → Context consumers
       │
+      ├─ / (landing page, public) and /login (public) — outside the (app) group,
+      │       no data fetch, minimal root layout.tsx
+      │
       └─ /api/* routes
               │  checkApiKey() → serverSupabase()
               └─ JSON responses
-              (called by BOTH external integrations below AND the browser UI itself)
+              (called by BOTH external integrations below AND the browser UI itself —
+               NOT session-gated, see "Known gap" below)
 
 External lead flow:
   Realeflow (Deal Surge)
@@ -405,23 +414,52 @@ External lead flow:
       → next poll cycle picks it up in any open browser (≤20s)
 ```
 
+### Authentication (Supabase Auth)
+
+Email/password auth via Supabase Auth, cookie-based sessions (not localStorage), so the server and browser see the same session. Built for a small team sharing one CRM dataset — there's no per-row ownership or multi-tenant split; anyone with an account sees everything, same as before auth existed.
+
+- **`src/middleware.ts`** — refreshes the session cookie on every request (`supabase.auth.getUser()` inside the `setAll` cookie callback) and redirects unauthenticated requests for any non-public page to `/?redirectTo=<path>` — the landing page, not `/login` directly (see [§8](#8-pages--routes) for the full flow). Public paths: `/`, `/login`, `/about`, `/services`. Already-authenticated visits to `/login` bounce to `/leads`. This same middleware still applies CORS headers to `/api/*` exactly as before — that logic is unchanged, just living alongside the new auth check in one file.
+- **`src/app/(app)/layout.tsx`** — the actual data-access gate. Calls `createAuthServerClient().auth.getUser()` and `redirect('/login')` server-side if there's no user, *before* fetching any CRM data. Middleware's redirect is a routing nicety; this is the check that actually matters, since it runs right before the Supabase queries.
+- **Sign in**: `src/app/login/page.tsx`, a client component using `supabase.auth.signInWithPassword()`. Uses a full `window.location.href` navigation on success (not `router.push`) so middleware re-runs with the fresh cookie and the server-rendered `(app)/layout.tsx` sees the session on the very next request — a client-side route change raced ahead of the cookie write in testing.
+- **Sign out**: `src/components/SignOutButton.tsx`, shared by both `CRMChrome` and `MPChrome` headers. Calls `supabase.auth.signOut()` then a full navigation to `/login`.
+- **Creating team members**: there's no self-serve signup — add users from the Supabase dashboard (Authentication → Users → Add user) or via `supabase.auth.admin.createUser()` with the service-role key. This matches the "me + a small team" scope; nothing here assumes self-serve signup.
+
+#### ⚠️ Known gap: `/api/*` routes are not session-gated
+
+Only page routes (`/leads`, `/map`, etc.) are protected by the auth check above. The `/api/*` routes still rely solely on the pre-existing `checkApiKey()` (`x-api-key` header vs. `API_SECRET_KEY`), which is a no-op if `API_SECRET_KEY` is unset — currently the case locally. This was a deliberate scope decision, not an oversight: Zapier's calls to `/api/leads` and the browser UI's own calls to `/api/properties` etc. have no user session at all (Zapier never logs in; the UI's fetches don't carry one either), so blanket-gating `/api/*` behind `auth.getUser()` would break both. If API-level access control is needed later, it should be a deliberate follow-up (e.g. set `API_SECRET_KEY` in production, or add a session check only to the routes the browser UI calls while leaving the Zapier-facing ones keyed) — not something to bolt on casually.
+
 ### Rendering
 
-`layout.tsx` exports `export const dynamic = 'force-dynamic'` — disables Next.js static caching so every page load fetches fresh data from Supabase.
+`(app)/layout.tsx` exports `export const dynamic = 'force-dynamic'` — disables Next.js static caching so every authenticated page load fetches fresh data from Supabase. The root `layout.tsx` and the landing page (`/`) are plain static/server-rendered — no data fetch, nothing to invalidate.
 
 ### Supabase Client Split
 
 | File | Key | Used in |
 |---|---|---|
-| `lib/supabase-server.ts` | Service role key | API routes, `layout.tsx` (server component) — the **only** way anything in this app touches Supabase |
+| `lib/supabase-server.ts` | Service role key | API routes, `(app)/layout.tsx` (server component) — all actual CRM data access |
+| `lib/supabase-browser.ts` | Anon key, cookie-based | Client components — auth only (`signInWithPassword`, `signOut`) |
+| `lib/supabase-auth-server.ts` | Anon key, cookie-based | Server components / route handlers — auth only (`auth.getUser()`), used by `middleware.ts` and `(app)/layout.tsx` |
 
-There is deliberately no anon-key client anywhere in the browser bundle.
+The anon-key clients exist **only** to answer "who is logged in" — never for querying properties/buyers/partners/etc. That data access stays entirely behind `/api/*` routes using the service-role client, same as before auth was added. Routing CRM data queries through the anon-key client would hit the same RLS wall described above.
 
 ---
 
 ## 8. Pages & Routes
 
+### Public
+
+| Route | Component | Description |
+|---|---|---|
+| `/` | `app/page.tsx` | Public marketing landing page — hero, product preview, features, "Sign in" CTA. Where every unauthenticated visitor lands (see below) and where sign-out returns to |
+| `/about` | `app/about/page.tsx` | About Us |
+| `/services` | `app/services/page.tsx` | Full services/features list — same `FEATURES` data as the landing page, via `lib/marketing-content.ts` |
+| `/login` | `app/login/page.tsx` | Email/password sign-in form |
+
+**Unauthenticated-visitor flow**: middleware redirects a logged-out visit to any protected page to `/?redirectTo=<path>` — the *landing page*, not straight to `/login`. The landing page's own "Sign in" links (nav + both CTAs) forward that `redirectTo` into `/login?redirectTo=<path>`, so the user still ends up back where they meant to go after signing in. `SignOutButton` also returns to `/` rather than `/login`. `MarketingNav`/`MarketingFooter` (`src/components/marketing/`) are shared across `/`, `/about`, and `/services`.
+
 ### CRM Module
+
+All routes below live under the `(app)` route group (`src/app/(app)/...` — the parens don't add a URL segment) and require a signed-in session; `(app)/layout.tsx` redirects to `/login` otherwise.
 
 | Route | Component | Description |
 |---|---|---|
@@ -693,6 +731,32 @@ git push origin main
 ## 14. Changelog
 
 Notable shipped work, newest first. Not every commit — just things worth a future reader knowing happened.
+
+### 2026-10-28 — Dark animated hero on the landing page
+
+Replaced the landing page's hero section (badge/headline/CTAs only — everything below it, and `/about`/`/services`, are unchanged and stay the existing light/orange theme) with a dark, animated-gradient hero: `src/components/marketing/Hero.tsx`.
+
+- Near-black background (`#090D10`) with layered teal/coral radial glows and a faint grid, all in a `pointer-events-none` decorative layer behind the nav and content.
+- Oversized "PIPELINE" headline (Montserrat 900, `clamp()`-sized) with a continuously moving white→teal gradient via `background-clip: text` + a CSS `@keyframes` animation — letters never move, only the color band traveling through them. Respects `prefers-reduced-motion` (animation stops, shows a static mid-gradient frame) and has a plain-color fallback under `@supports not (background-clip: text)`.
+- `MarketingNav` gained a `variant="dark"` prop (used only here) so `/about`/`/services` keep the original light nav — one component, not a forked copy.
+- All CSS tokens (colors, grid size, animation duration) live under a scoped `.hero-dark { --hero-*: ... }` block in `globals.css`, not global `:root`, so they can't leak into the rest of the site's styling.
+- No promotional sticky-note annotation — there's no real current promo to show, so it was left out rather than inventing one (there's a comment in `Hero.tsx` showing how to add one later if that changes).
+- Verified at 375/768/1024/1440px (no horizontal overflow at any width), reduced-motion, keyboard focus visibility, single-`h1` check, zero console errors, and the full login/redirectTo/sign-out flow still working through the new hero's CTAs — all via Playwright.
+
+### 2026-10-28 — Logged-out visitors land on the marketing page; About/Services pages; redesigned nav
+
+Follow-up to the auth work below, same day. Three changes:
+- Unauthenticated visits to any protected page now redirect to `/?redirectTo=<path>` (the landing page) instead of straight to `/login` — the landing page's own "Sign in" links forward `redirectTo` into `/login`. `SignOutButton` returns to `/` instead of `/login` too.
+- New `/about` and `/services` pages; `MarketingNav`/`MarketingFooter` (`src/components/marketing/`) shared across all three public pages. Nav order: About Us, Services, Sign in.
+- Shared feature copy pulled into `src/lib/marketing-content.ts` so the landing page's feature grid and `/services`'s full list can't drift apart.
+
+### 2026-10-28 — Supabase Auth (email/password) + public landing page
+
+- **Auth**: Supabase Auth, email/password, cookie-based sessions via `@supabase/ssr`. No self-serve signup — team members are added from the Supabase dashboard or via the admin API. See [§7 → Authentication](#7-application-architecture) for the full architecture and the known `/api/*` gating gap.
+- **Route restructuring**: all ~15 CRM/Money-Partners pages moved into a new `(app)` route group so they share one auth-gated layout; URLs are unchanged (route groups don't add a path segment). `layout.tsx` at the root is now a bare html/body shell — the data-fetch + `AppShell` logic that used to live there moved to `(app)/layout.tsx`, with a `redirect('/login')` added ahead of the Supabase queries.
+- **Landing page** (`/`) and **login page** (`/login`): new public routes outside the `(app)` group. Landing page is static marketing copy describing the features actually built (lead pipeline, map/property lookup, HUD REO leads, money partners, AI triage, AI assistant) with a sign-in CTA.
+- **`src/middleware.ts`**: extended from CORS-only (`/api/*`) to also refresh the Supabase session cookie and redirect unauthenticated page requests to `/login`. CORS behavior for `/api/*` (used by Zapier) is unchanged — verified with `curl` after the change.
+- Verified end-to-end with Playwright against a real Supabase test user (created/deleted via the admin API): logged-out redirect, bad-password error, real sign-in, authenticated `/login` bounce to `/leads`, sign-out, and post-sign-out re-redirect all confirmed working. `/api/leads` OPTIONS/GET and its CORS headers confirmed unaffected.
 
 ### 2026-10-27 — AI HUD triage planned (not built) — Groq chosen over paid providers
 
