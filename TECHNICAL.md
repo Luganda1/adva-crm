@@ -1,5 +1,49 @@
 # ADVA CRM — Technical Documentation
 
+## ⏸ Project Status (paused 2026-11-02) — read this first if resuming
+
+This project is on hold while the team transitions to a new project. Everything below this section is the normal living technical doc (architecture, API reference, etc.) and is accurate as of the pause date. This section is the "what state did we leave it in" summary — read it before touching anything.
+
+### The one thing to fix first: production is down
+
+**`https://adva-crm.vercel.app` is returning HTTP 500 (`MIDDLEWARE_INVOCATION_FAILED`) on every page**, and has been since `src/middleware.ts` was extended to run Supabase auth on every route (not just `/api/*`). Confirmed root cause via `vercel env pull`: **Vercel's Production, Preview, and Development environments all show zero configured environment variables** — no `NEXT_PUBLIC_SUPABASE_URL`, no `SUPABASE_SERVICE_ROLE_KEY`, nothing. Without those, `createServerClient()` in middleware throws on every request before any page or API route can run — this also means the Zapier lead-intake webhook (`/api/leads`) is currently broken too, not just the UI.
+
+**The fix** (not yet done — needs a human with Vercel dashboard/CLI access and the real secret values): add all the variables from [§4](#4-environment-variables) to the Vercel project (`luganda1s-projects/adva-crm`) for at least the Production environment — values are in the local `.env.local` (not committed, ask whoever has it, or regenerate from each provider's dashboard: Supabase, Google Cloud Console, Groq, Repliers). Can be done via `vercel env add <NAME> production` per variable, or through the Vercel dashboard UI directly. After adding them, redeploy (push an empty commit or use `vercel --prod`) and confirm with `curl -I https://adva-crm.vercel.app/` — should return `200`/`307`, not `500`.
+
+### Two GitHub repos — know which is which
+
+This project lives in **two** GitHub repos that must be kept in sync, and that wasn't happening for a while:
+
+- **`Luganda1/adva-crm`** — the fork. This is where all development actually happened (every branch, every PR in this doc's Changelog). `origin` remote.
+- **`nancyonrei/adva-crm`** — the upstream/original repo. This is where the *real* production Vercel deployment is wired up on Nancy's side. `upstream` remote (already configured locally as of the pause — `git remote -v` should show both).
+
+**What happened:** the fork was the only one receiving pushes for most of this project's life, so `nancyonrei/adva-crm` fell 53 commits behind and its Vercel deployment never updated. Manually fixed with a one-time fast-forward push (`git push upstream main`) on 2026-11-02 — both repos' `main` were identical as of commit `2a6cbf9` that day.
+
+**The automated fix is half-done — finish this when resuming:** [PR #8](https://github.com/Luganda1/adva-crm/pull/8) on the fork adds `.github/workflows/sync-upstream.yml`, which auto-pushes the fork's `main` to `nancyonrei/adva-crm:main` on every push (plain push, never `--force` — fails loudly in the Actions tab rather than overwriting anything if upstream ever diverges). **It needs a repo secret (`UPSTREAM_TOKEN` — a GitHub PAT with push access to `nancyonrei/adva-crm`) added before it does anything, and the PR itself still needs merging.** Confusingly, the same workflow file also got merged directly into `nancyonrei/adva-crm` itself (as that repo's own PR #1) — that copy is inert/backwards (a workflow pushing "to nancyonrei/adva-crm" that runs *on* nancyonrei/adva-crm doesn't do anything useful) and should probably just be deleted from there once the fork's copy (PR #8) is live, to avoid confusion. Until PR #8 is merged with its secret configured, **sync is still manual** — remember to `git push upstream main` after merging anything to the fork's `main`.
+
+### Open PRs at the time of pause
+
+| PR | Branch | Status |
+|---|---|---|
+| [#8](https://github.com/Luganda1/adva-crm/pull/8) | `chore/sync-upstream-workflow` | Mergeable, not yet merged — needs `UPSTREAM_TOKEN` secret (see above) |
+
+(PRs #1–#7 are all merged — see [§14 Changelog](#14-changelog) for what each shipped.)
+
+### What's fully working vs. built-but-unconfigured
+
+- **Working, assuming the env vars above are restored:** the whole CRM (leads, partners, buyers, letters, import, map, money partners), Supabase Auth (email/password), the public landing/about/services pages, Zapier lead intake.
+- **Built but needs its own API key to actually function:** AI HUD triage and the AI chat assistant both need `GROQ_API_KEY` (free tier — see [§11](#11-external-integrations)); Property Search needs `REPLIERS_API_KEY`; property enrichment needs `RENTCAST_API_KEY`. None of these block the rest of the app if unset — they just no-op/error gracefully in their own features.
+- **No open bugs known at pause time** beyond the production env var issue above — the last two things fixed before pausing were a duplicate-React-key warning on `/hud-leads` ([PR #7](https://github.com/Luganda1/adva-crm/pull/7)) and the two-repo sync.
+
+### Quick pickup checklist
+
+1. Restore Vercel env vars (above) — confirms the site is even reachable again.
+2. Add `UPSTREAM_TOKEN` secret and merge PR #8 — restores automatic two-repo sync; delete the stray inert copy of the workflow from `nancyonrei/adva-crm` directly.
+3. `git fetch` both `origin` and `upstream`, confirm they match (`git log upstream/main..origin/main` and the reverse should both be empty).
+4. Everything else — read on, the rest of this doc is the normal technical reference.
+
+---
+
 ## Table of Contents
 
 1. [Project Overview](#1-project-overview)
@@ -293,7 +337,7 @@ Lists all leads. Supports `?status=probate` and `?limit=50` query params.
 Dedicated endpoint for new lead intake from Zapier/Realeflow. Same field handling as `POST /api/properties` but returns `{ lead: data }` wrapper. **Use this URL in Zapier.**
 
 ```
-URL:     https://adva-crm-two.vercel.app/api/leads
+URL:     https://adva-crm.vercel.app/api/leads
 Headers: x-api-key: adva-zap-2024-xK9mP
          x-source: zapier
          Content-Type: application/json
@@ -617,7 +661,7 @@ Client only ever sends/stores clean user/assistant text — the intermediate too
 **Zapier action config:**
 ```
 Method:        POST
-URL:           https://adva-crm-two.vercel.app/api/leads
+URL:           https://adva-crm.vercel.app/api/leads
 Payload Type:  JSON
 Unflatten:     No  ← IMPORTANT: must be disabled
 
@@ -703,10 +747,14 @@ Chosen specifically because this project has **no budget for paid AI APIs**. Che
 ## 12. Deployment
 
 **Platform:** Vercel  
-**Production URL:** `https://adva-crm-two.vercel.app`  
+**Production URL:** `https://adva-crm.vercel.app` (Vercel project `luganda1s-projects/adva-crm`, connected to the `Luganda1/adva-crm` fork)  
 **Trigger:** Every push to `main` auto-deploys
 
-**Required Vercel environment variables:** See Section 4.
+There's a **second** Vercel deployment too, connected to `nancyonrei/adva-crm` (the upstream repo this project was forked from) — see the [Project Status](#-project-status-paused-2026-11-02--read-this-first-if-resuming) section at the top of this doc for why there are two repos/deployments and how they're kept in sync.
+
+⚠️ **As of the pause date, production is down** — see [Project Status](#-project-status-paused-2026-11-02--read-this-first-if-resuming) for the root cause (missing Vercel env vars) and the fix.
+
+**Required Vercel environment variables:** See Section 4. Must be set on the `luganda1s-projects/adva-crm` Vercel project (and, separately, whatever Vercel project is connected to `nancyonrei/adva-crm`, if that's meant to be a working deployment too).
 
 **Local development:**
 ```bash
@@ -740,7 +788,7 @@ Runs daily at 12:00 UTC. Secured with `CRON_SECRET`. Monitor at: **Vercel Dashbo
 ### Health Check
 
 ```bash
-curl https://adva-crm-two.vercel.app/api/health
+curl https://adva-crm.vercel.app/api/health
 ```
 
 ### Adding a New Column
@@ -765,20 +813,30 @@ curl https://adva-crm-two.vercel.app/api/health
 
 ### Branch Workflow
 
-All changes go through feature branches — never commit directly to `main`:
+All changes go through feature branches and a GitHub PR — never commit directly to `main`:
 ```
 git checkout -b feature/<name>
 # make changes, commit
-git checkout main
-git merge feature/<name>
-git push origin main
+git push -u origin feature/<name>
+gh pr create --repo Luganda1/adva-crm --base main --head feature/<name> --title "..." --body "..."
+# review, then merge the PR on GitHub (or gh pr merge)
 ```
+Once `.github/workflows/sync-upstream.yml` is live (see [PR #8](https://github.com/Luganda1/adva-crm/pull/8) / [Project Status](#-project-status-paused-2026-11-02--read-this-first-if-resuming)), merging to `main` here also auto-pushes to `nancyonrei/adva-crm:main`. Until then, after merging to `main`, also run `git push upstream main` manually to keep the two repos in sync.
 
 ---
 
 ## 14. Changelog
 
 Notable shipped work, newest first. Not every commit — just things worth a future reader knowing happened.
+
+### 2026-11-02 — Project paused; two-repo sync fixed; duplicate-key bug fixed; production outage found (unresolved)
+
+Last working session before transitioning to a new project — see the [Project Status](#-project-status-paused-2026-11-02--read-this-first-if-resuming) section at the top of this doc for the full pickup checklist. Summary of this session's work:
+
+- **Fixed**: `/hud-leads` React duplicate-key console warning ([PR #7](https://github.com/Luganda1/adva-crm/pull/7)) — not duplicate HUD case numbers (verified against the live feed), but two empty-string table-header columns both keyed on their own text.
+- **Found, partially fixed**: `nancyonrei/adva-crm` (the upstream repo this project was forked from, where the "real" production Vercel deployment is connected) had fallen 53 commits behind this fork because nothing had been pushing to it. Manually caught up with a fast-forward push. Built an automated fix ([PR #8](https://github.com/Luganda1/adva-crm/pull/8), `.github/workflows/sync-upstream.yml`) that isn't fully live yet — needs a secret added and the PR merged.
+- **Found, NOT fixed**: production (`adva-crm.vercel.app`) is down with a 500 on every page. Root cause confirmed: zero environment variables configured in Vercel across all environments, which crashes the new auth middleware (added earlier this session via PR #6) on every request. This is the most important thing to fix when this project resumes.
+- Also resolved two separate GitHub merge conflicts between branches during this session (`feature/ai-hud-triage` vs. `main`, and `fix/hud-leads-duplicate-key` vs. `main` after a second branch landed first) — both were additive conflicts (different branches touching the same lines for different reasons), resolved by combining both sides rather than picking one.
 
 ### 2026-10-28 — Dark animated hero on the landing page
 
