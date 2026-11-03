@@ -1,0 +1,42 @@
+name: Sync main to nancyonrei/adva-crm
+
+# This repo is a fork (Luganda1/adva-crm) of nancyonrei/adva-crm. GitHub's
+# own "Sync fork" feature only pulls FROM upstream INTO a fork — it has no
+# equivalent for pushing the other way, which is what we actually need here
+# (this fork is the one being actively developed; nancyonrei/adva-crm is
+# where the real Vercel production deployment is wired up and needs to stay
+# current). This workflow does that: every push to main here gets mirrored
+# to nancyonrei/adva-crm's main automatically, so the two repos — and their
+# separate Vercel deployments — never drift out of sync again.
+#
+# Deliberately NOT a force-push: if nancyonrei/adva-crm ever gets its own
+# commits that aren't in this fork (e.g. someone pushes there directly),
+# a plain push is rejected as non-fast-forward and this job fails loudly
+# in the Actions tab — nothing gets silently overwritten. A failure here
+# means a human needs to look, not something to work around.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Push main to nancyonrei/adva-crm
+        env:
+          UPSTREAM_TOKEN: ${{ secrets.UPSTREAM_TOKEN }}
+        run: |
+          if [ -z "$UPSTREAM_TOKEN" ]; then
+            echo "::error::UPSTREAM_TOKEN secret is not set — see .github/workflows/sync-upstream.yml for setup instructions."
+            exit 1
+          fi
+          git remote add upstream "https://x-access-token:${UPSTREAM_TOKEN}@github.com/nancyonrei/adva-crm.git"
+          git push upstream main
